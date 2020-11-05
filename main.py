@@ -242,11 +242,12 @@ def train(trainer):
 
 
 #%%
-(x_train, y_train), (x_val, y_val), (x_test, y_test) = get_train_test()
 batch_size = 32 
 epochs = 5
 reg_constant = 10.
 dropout_constant = 0.3
+
+(x_train, y_train), (x_val, y_val), (x_test, y_test) = get_train_test()
 
 tf.reset_default_graph()
 # trainer = Baseline()

@@ -60,15 +60,15 @@ def record_metrics(w, w_grad, loss, metrics):
     metrics['wg_mean'] = np.mean(w_grad)
     metrics['w_var'] = np.var(w)
     metrics['wg_var'] = np.var(w_grad)
-    metrics['w_rank'] = np.linalg.matrix_rank(wt)
+    metrics['w_rank'] = np.linalg.matrix_rank(w)
     metrics['loss'] = loss 
 
 def train(trainer):
-    with tf.Session() as sess: 
-        sess.run(tf.global_variables_initializer())
-        sess.run(tf.local_variables_initializer())
+    with tf.compat.v1.Session() as sess: 
+        sess.run(tf.compat.v1.global_variables_initializer())
+        sess.run(tf.compat.v1.local_variables_initializer())
 
-        for e in range(epochs):
+        for e in range(config['epochs']):
             metrics = init_metrics()
             # training 
             sess.run(trainer.dset_init, \
@@ -100,26 +100,33 @@ def train(trainer):
             writer.write(epoch_metrics, e)
         
             print('{}: {} {}'.format(e, train_acc, val_acc))
-    writer.fin()
-
 
 #%%
-batch_size = 32 
-epochs = 5
-reg_constant = 10.
-dropout_constant = 0.3
-
+config = {
+    'batch_size': 32,
+    'epochs': 1,
+    'reg_constant': 10.,
+    'dropout_constant': 0.3,
+}
 (x_train, y_train), (x_val, y_val), (x_test, y_test) = get_train_test()
 
 tf.reset_default_graph()
-# trainer = Baseline()
-trainer = LipschitzReg(reg_constant)
-# trainer = DropoutReg(dropout_constant)
-# trainer = SpectralReg(reg_constant)
-# trainer = OrthogonalReg(reg_constant)
+# trainer = Baseline(config)
+# trainer = LipschitzReg(config)
+# trainer = DropoutReg(config)
+# trainer = SpectralReg(config)
+# trainer = OrthogonalReg(config)
+
+trainers = [Baseline, LipschitzReg, DropoutReg, SpectralReg, OrthogonalReg]
 
 writer = NeptuneWriter('gebob19/672')
-# writer.start({'experiment_name': type(trainer)})
-train(trainer)
+
+for trainer_class in trainers: 
+    config['experiment_name'] = trainer_class.__name__
+    # writer.start(config)
+
+    train(trainer_class(config))
+    
+    writer.fin()
 
 # %%

@@ -1,4 +1,5 @@
 import tensorflow as tf 
+import numpy as np 
 
 def get_model(dropout=0.):
     model = tf.keras.models.Sequential()
@@ -9,14 +10,17 @@ def get_model(dropout=0.):
     return model
 
 class Baseline():
-    def __init__(self):
+    def __init__(self, config):
         self.optimizer = tf.train.GradientDescentOptimizer(1e-2)
         self.loss_func = tf.keras.losses.CategoricalCrossentropy(from_logits=True)
+        
+        self.batch_size = config['batch_size']
+
         self.build_graph()
 
     def build_datapipeline(self):
         dataset = tf.data.Dataset.from_tensor_slices((self.x_data, self.y_data))\
-            .batch(batch_size)
+            .batch(self.batch_size)
         iterator = tf.data.Iterator.from_structure(dataset.output_types,
                                                 dataset.output_shapes)
         self.dset_init = iterator.make_initializer(dataset)
@@ -35,7 +39,7 @@ class Baseline():
         xb, yb = iterator.get_next()
 
         logits = model(xb)
-        self.loss = loss_func(yb, logits)
+        self.loss = self.loss_func(yb, logits)
 
         self.acc, self.acc_op = tf.metrics.accuracy(tf.argmax(yb, 1), tf.argmax(logits, 1), name='acc')
         self.acc_vars = tf.get_collection(tf.GraphKeys.LOCAL_VARIABLES, scope="acc")
@@ -44,12 +48,12 @@ class Baseline():
         self.w_grad = tf.gradients(self.loss, model.trainable_weights)[0]
         self.w = model.trainable_weights[0]
 
-        self.train_op = optimizer.minimize(self.loss)
+        self.train_op = self.optimizer.minimize(self.loss)
 
 class LipschitzReg(Baseline):
-    def __init__(self, reg_constant):
-        self.reg_constant = reg_constant
-        super().__init__()
+    def __init__(self, config):
+        self.reg_constant = config['reg_constant']
+        super().__init__(config)
 
     def build_graph(self):
         self.x_data = tf.placeholder(np.float32, [None, 784])
@@ -61,7 +65,7 @@ class LipschitzReg(Baseline):
         xb, yb = iterator.get_next()
 
         logits = model(xb)
-        self.loss = loss_func(yb, logits)
+        self.loss = self.loss_func(yb, logits)
 
         # lipschitz regularization
         grads = tf.gradients(self.loss, model.trainable_weights)
@@ -75,21 +79,21 @@ class LipschitzReg(Baseline):
         self.w_grad = tf.gradients(self.loss, model.trainable_weights)[0]
         self.w = model.trainable_weights[0]
 
-        self.train_op = optimizer.minimize(self.loss)
+        self.train_op = self.optimizer.minimize(self.loss)
 
 class DropoutReg(Baseline):
-    def __init__(self, dropout_constant): 
-        self.dropout_constant = dropout_constant
-        super().__init__()
+    def __init__(self, config): 
+        self.dropout_constant = config['dropout_constant']
+        super().__init__(config)
 
     def get_model(self):
         return get_model(self.dropout_constant)
 
 class SpectralReg(Baseline):
-    def __init__(self, reg_constant):
-        self.reg_constant = reg_constant
+    def __init__(self, config):
+        self.reg_constant = config['reg_constant']
         self.v = tf.random.normal((10, 1), mean=0., stddev=1.)
-        super().__init__()
+        super().__init__(config)
 
     def train(self, xb, yb):
         self.x_data = tf.placeholder(np.float32, [None, 784])
@@ -101,7 +105,7 @@ class SpectralReg(Baseline):
         xb, yb = iterator.get_next()
 
         logits = model(xb)
-        self.loss = loss_func(yb, logits)
+        self.loss = self.loss_func(yb, logits)
 
         # apply spectral norm reg. 
         grads = tf.gradients(self.loss, model.trainable_weights)
@@ -124,9 +128,9 @@ class SpectralReg(Baseline):
         self.train_op = self.optimizer.apply_gradients(zip(grads, model.trainable_weights))
 
 class OrthogonalReg(Baseline):
-    def __init__(self, reg_constant):
-        self.reg_constant = reg_constant
-        super().__init__()
+    def __init__(self, config):
+        self.reg_constant = config['reg_constant']
+        super().__init__(config)
 
     def get_model(self):
         def orthogonal_reg(W):

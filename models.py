@@ -42,35 +42,6 @@ class Baseline():
 
         self.train_op = self.optimizer.minimize(self.loss)
 
-class LipschitzReg(Baseline):
-    def __init__(self, config):
-        self.reg_constant = config['reg_constant']
-        super().__init__(config)
-
-    def build_graph(self):
-        self.x_data = tf.placeholder(np.float32, [None, 784])
-        self.y_data = tf.placeholder(np.float32, [None, 10])
-        
-        iterator = self.build_datapipeline()
-        xb, yb = iterator.get_next()
-
-        logits = self.model(xb)
-        self.loss = self.loss_func(yb, logits)
-
-        # lipschitz regularization
-        grads = tf.gradients(self.loss, tf.compat.v1.trainable_variables())
-        lipschitz_reg = tf.reduce_mean([(tf.norm(g, 2) - 1.) ** 2 for g in grads])
-        self.loss += self.reg_constant * lipschitz_reg
-
-        self.acc, self.acc_op = tf.metrics.accuracy(tf.argmax(yb, 1), tf.argmax(logits, 1), name='acc')
-        self.acc_vars = tf.get_collection(tf.GraphKeys.LOCAL_VARIABLES, scope="acc")
-        self.acc_initializer = tf.variables_initializer(var_list=self.acc_vars)
-
-        self.w_grad = tf.gradients(self.loss, tf.compat.v1.trainable_variables())[0]
-        self.w = tf.compat.v1.trainable_variables()[0]
-
-        self.train_op = self.optimizer.minimize(self.loss)
-
 class DropoutReg(Baseline):
     def __init__(self, config): 
         self.dropout_constant = config['dropout_constant']
@@ -127,6 +98,56 @@ class OrthogonalReg(Baseline):
             orthog_term = tf.abs(W @ tf.transpose(W) - tf.eye(W.shape.as_list()[0])).sum()
             return self.reg_constant * orthog_term
         self.mlp = tf.keras.layers.Dense(10, kernel_regularizer=orthogonal_reg)
+
+class L2Reg(Baseline):
+    def __init__(self, config):
+        self.reg_constant = config['reg_constant']
+        super().__init__(config)
+
+        def L2_reg(W):
+            norm = tf.norm(W, 2)
+            return self.reg_constant * norm
+        self.mlp = tf.keras.layers.Dense(10, kernel_regularizer=L2_reg)
+
+class L1Reg(Baseline):
+    def __init__(self, config):
+        self.reg_constant = config['reg_constant']
+        super().__init__(config)
+
+        def L1_reg(W):
+            norm = tf.norm(W, 1)
+            return self.reg_constant * norm
+        self.mlp = tf.keras.layers.Dense(10, kernel_regularizer=L1_reg)
+
+# didn't perform well 
+class LipschitzReg(Baseline):
+    def __init__(self, config):
+        self.reg_constant = config['reg_constant']
+        super().__init__(config)
+
+    def build_graph(self):
+        self.x_data = tf.placeholder(np.float32, [None, 784])
+        self.y_data = tf.placeholder(np.float32, [None, 10])
+        
+        iterator = self.build_datapipeline()
+        xb, yb = iterator.get_next()
+
+        logits = self.model(xb)
+        self.loss = self.loss_func(yb, logits)
+
+        # lipschitz regularization
+        grads = tf.gradients(self.loss, tf.compat.v1.trainable_variables())
+        lipschitz_reg = tf.reduce_mean([(tf.norm(g, 2) - 1.) ** 2 for g in grads])
+        self.loss += self.reg_constant * lipschitz_reg
+
+        self.acc, self.acc_op = tf.metrics.accuracy(tf.argmax(yb, 1), tf.argmax(logits, 1), name='acc')
+        self.acc_vars = tf.get_collection(tf.GraphKeys.LOCAL_VARIABLES, scope="acc")
+        self.acc_initializer = tf.variables_initializer(var_list=self.acc_vars)
+
+        self.w_grad = tf.gradients(self.loss, tf.compat.v1.trainable_variables())[0]
+        self.w = tf.compat.v1.trainable_variables()[0]
+
+        self.train_op = self.optimizer.minimize(self.loss)
 
 # def get_model(is_training=True, dropout=0.):
 #     model = tf.keras.models.Sequential()

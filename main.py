@@ -165,13 +165,10 @@ config = {
 (x_train, y_train), (x_val, y_val), (x_test, y_test) = get_train_test()
 
 # default configs 
-trainers = [Baseline, LipschitzReg, DropoutReg, SpectralReg, OrthogonalReg]
-configs = [config.copy(), config.copy(), config.copy(), config.copy(), config.copy()]
+trainers = [Baseline, L1Reg, L2Reg, DropoutReg, SpectralReg, OrthogonalReg]
+configs = [config.copy(), config.copy(), config.copy(), config.copy(), config.copy(), config.copy()]
 
-# lipschitz
-configs[1]['reg_constant'] = 10.
-
-# variations of regularization constants 
+# variations of regularization/dropout parameters 
 new_trainers, new_configs = [], []
 for config, trainer_class in zip(configs, trainers):
     if trainer_class.__name__ == 'Baseline': 
@@ -207,6 +204,7 @@ for config, trainer_class in zip(configs, trainers):
         new_confg['dropout_constant'] = 0.8
         new_configs.append(new_confg)
         new_trainers.append(trainer_class)
+
 trainers += new_trainers
 configs += new_configs
 

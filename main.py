@@ -2,6 +2,8 @@
 import numpy as np 
 import tensorflow as tf 
 
+from sklearn.manifold import TSNE
+import matplotlib.pyplot as plt 
 from tqdm import tqdm 
 
 from models import * 
@@ -34,6 +36,15 @@ def get_train_test(batch_size=32):
 
     return (x_train, y_train), (x_val, y_val), (x_test, y_test)
 
+def log_weights(W, writer):
+    x = TSNE(n_components=2).fit_transform(W.T)
+    for i, xt in enumerate(x): 
+        plt.scatter(xt[0], xt[1], label=str(i))
+    plt.legend()
+    if writer.has_started: 
+        writer.experiment.log_image('TSNE_weights', plt.gcf())
+    plt.clf()
+
 def mean_over_dict(custom_metrics):
     mean_metrics = {}
     for k in custom_metrics.keys(): 
@@ -63,8 +74,14 @@ def record_metrics(w, w_grad, loss, metrics):
     metrics['w_rank'] = np.linalg.matrix_rank(w)
     metrics['loss'] = loss 
 
-def train(trainer):
+def train(trainer):    
+    # for early stopping 
+    require_improvement = 10
+    stop = False 
+
     with tf.compat.v1.Session() as sess: 
+        best_sess = sess
+        best_score = 0. 
         sess.run(tf.compat.v1.global_variables_initializer())
         sess.run(tf.compat.v1.local_variables_initializer())
 
@@ -88,7 +105,10 @@ def train(trainer):
             # validation 
             try: 
                 sess.run(trainer.acc_initializer) # reset accuracy metric
-                sess.run(trainer.dset_init, feed_dict={trainer.x_data: x_val, trainer.y_data: y_val})
+                sess.run(trainer.dset_init, feed_dict={
+                    trainer.x_data: x_val, 
+                    trainer.y_data: y_val, 
+                    trainer.is_training: False})
                 while True:
                     losst, _ = sess.run([trainer.loss, trainer.acc_op])        
             except tf.errors.OutOfRangeError: pass 
@@ -96,36 +116,112 @@ def train(trainer):
             val_acc = sess.run(trainer.acc)
             metrics['val_acc'] = [val_acc]
 
+            # early stopping
+            ## https://stackoverflow.com/questions/46428604/how-to-implement-early-stopping-in-tensorflow
+            if val_acc > best_score:
+                best_sess = sess # save session
+                best_score = val_acc
+                last_improvement = 0
+                costs_inter = []
+            else:
+                last_improvement += 1
+            if last_improvement > require_improvement:
+                # Break out from the loop.
+                stop = True
+                sess = best_sess # restore session with the best score
+
             epoch_metrics = mean_over_dict(metrics)
             writer.write(epoch_metrics, e)
-        
+
             print('{}: {} {}'.format(e, train_acc, val_acc))
+    
+            if stop: 
+                print('Early stopping...')
+                break 
+
+        # test set 
+        try: 
+            sess.run(trainer.acc_initializer) # reset accuracy metric
+            sess.run(trainer.dset_init, feed_dict={
+                trainer.x_data: x_test, 
+                trainer.y_data: y_test, 
+                trainer.is_training: False})
+            while True:
+                _ = sess.run([trainer.acc_op])
+        except tf.errors.OutOfRangeError: pass 
+        test_acc = sess.run(trainer.acc)
+        writer.write({'test_acc': test_acc}, e+1)
+
+        W = sess.run(trainer.w)
+    return trainer, W 
 
 #%%
 config = {
     'batch_size': 32,
     'epochs': 1,
-    'reg_constant': 10.,
+    'reg_constant': 0.01,
     'dropout_constant': 0.3,
 }
 (x_train, y_train), (x_val, y_val), (x_test, y_test) = get_train_test()
 
-tf.reset_default_graph()
-# trainer = Baseline(config)
-# trainer = LipschitzReg(config)
-# trainer = DropoutReg(config)
-# trainer = SpectralReg(config)
-# trainer = OrthogonalReg(config)
-
+# default configs 
 trainers = [Baseline, LipschitzReg, DropoutReg, SpectralReg, OrthogonalReg]
+configs = [config.copy(), config.copy(), config.copy(), config.copy(), config.copy()]
+
+# lipschitz
+configs[1]['reg_constant'] = 10.
+
+# variations of regularization constants 
+new_trainers, new_configs = [], []
+for config, trainer_class in zip(configs, trainers):
+    if trainer_class.__name__ == 'Baseline': 
+        continue
+
+    if trainer_class.__name__ != 'DropoutReg':
+        new_confg = config.copy()
+        new_confg['reg_constant'] *= 10
+        new_configs.append(new_confg)
+        new_trainers.append(trainer_class)
+
+        new_confg = config.copy()
+        new_confg['reg_constant'] *= 100
+        new_configs.append(new_confg)
+        new_trainers.append(trainer_class)
+
+        new_confg = config.copy()
+        new_confg['reg_constant'] /= 10
+        new_configs.append(new_confg)
+        new_trainers.append(trainer_class)
+
+        new_confg = config.copy()
+        new_confg['reg_constant'] /= 100
+        new_configs.append(new_confg)
+        new_trainers.append(trainer_class)
+    else: 
+        new_confg = config.copy()
+        new_confg['dropout_constant'] = 0.5
+        new_configs.append(new_confg)
+        new_trainers.append(trainer_class)
+
+        new_confg = config.copy()
+        new_confg['dropout_constant'] = 0.8
+        new_configs.append(new_confg)
+        new_trainers.append(trainer_class)
+trainers += new_trainers
+configs += new_configs
 
 writer = NeptuneWriter('gebob19/672')
 
-for trainer_class in trainers: 
+# trainers = [Baseline]
+# configs = [config]
+
+for config, trainer_class in zip(configs, trainers): 
     config['experiment_name'] = trainer_class.__name__
     # writer.start(config)
 
-    train(trainer_class(config))
+    tf.reset_default_graph()
+    full_trainer, W = train(trainer_class(config))
+    log_weights(W, writer)
     
     writer.fin()
 

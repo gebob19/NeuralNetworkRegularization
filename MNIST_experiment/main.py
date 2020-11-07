@@ -74,7 +74,7 @@ def record_metrics(w, w_grad, loss, metrics):
     metrics['w_rank'].append(np.linalg.matrix_rank(w))
     metrics['loss'].append(loss)
 
-def train(trainer):    
+def train(trainer):
     # for early stopping 
     require_improvement = 10
     stop = False 
@@ -218,6 +218,8 @@ for config, trainer_class in zip(configs, trainers):
 trainers += new_trainers
 configs += new_configs
 
+print(trainers[-1], configs[-1])
+
 writer = NeptuneWriter('gebob19/672')
 
 # trainers = [Baseline]
@@ -233,4 +235,5 @@ for config, trainer_class in zip(configs, trainers):
     
     writer.fin()
 
+print('Complete!')
 # %%

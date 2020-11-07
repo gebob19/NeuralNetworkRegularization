@@ -65,14 +65,14 @@ def init_metrics():
     return custom_metrics
 
 def record_metrics(w, w_grad, loss, metrics): 
-    metrics['w_norm'] = np.linalg.norm(w)
-    metrics['wg_norm'] = np.linalg.norm(w_grad)
-    metrics['w_mean'] = np.mean(w)
-    metrics['wg_mean'] = np.mean(w_grad)
-    metrics['w_var'] = np.var(w)
-    metrics['wg_var'] = np.var(w_grad)
-    metrics['w_rank'] = np.linalg.matrix_rank(w)
-    metrics['loss'] = loss 
+    metrics['w_norm'].append(np.linalg.norm(w))
+    metrics['wg_norm'].append(np.linalg.norm(w_grad))
+    metrics['w_mean'].append(np.mean(w))
+    metrics['wg_mean'].append(np.mean(w_grad))
+    metrics['w_var'].append(np.var(w))
+    metrics['wg_var'].append(np.var(w_grad))
+    metrics['w_rank'].append(np.linalg.matrix_rank(w))
+    metrics['loss'].append(loss )
 
 def train(trainer):    
     # for early stopping 

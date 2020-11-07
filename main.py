@@ -72,7 +72,7 @@ def record_metrics(w, w_grad, loss, metrics):
     metrics['w_var'].append(np.var(w))
     metrics['wg_var'].append(np.var(w_grad))
     metrics['w_rank'].append(np.linalg.matrix_rank(w))
-    metrics['loss'].append(loss )
+    metrics['loss'].append(loss)
 
 def train(trainer):    
     # for early stopping 
@@ -202,6 +202,16 @@ for config, trainer_class in zip(configs, trainers):
 
         new_confg = config.copy()
         new_confg['dropout_constant'] = 0.8
+        new_configs.append(new_confg)
+        new_trainers.append(trainer_class)
+
+        new_confg = config.copy()
+        new_confg['dropout_constant'] = 0.1
+        new_configs.append(new_confg)
+        new_trainers.append(trainer_class)
+        
+        new_confg = config.copy()
+        new_confg['dropout_constant'] = 0.2
         new_configs.append(new_confg)
         new_trainers.append(trainer_class)
 

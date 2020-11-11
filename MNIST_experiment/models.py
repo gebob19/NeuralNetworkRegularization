@@ -15,7 +15,7 @@ class Baseline():
         dataset = tf.data.Dataset.from_tensor_slices((self.x_data, self.y_data))\
             .batch(self.batch_size)
         iterator = tf.data.Iterator.from_structure(dataset.output_types,
-                                                dataset.output_shapes)
+                                                  dataset.output_shapes)
         self.dset_init = iterator.make_initializer(dataset)
         return iterator
 

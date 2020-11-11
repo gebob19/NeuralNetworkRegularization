@@ -7,6 +7,10 @@ import matplotlib.pyplot as plt
 from tqdm import tqdm 
 
 from models import * 
+
+import sys 
+import pathlib 
+sys.path.append(str(pathlib.Path.home()/'Documents/gradschool/672/project/regularization_project'))
 from writers import NeptuneWriter
 
 print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
@@ -87,7 +91,9 @@ def train(trainer):
 
         for e in range(config['epochs']):
             metrics = init_metrics()
+            
             # training 
+            sess.run(trainer.acc_initializer) # reset accuracy metric
             sess.run(trainer.dset_init, \
                 feed_dict={trainer.x_data: x_train, trainer.y_data: y_train})
             try: 
@@ -98,7 +104,6 @@ def train(trainer):
                     
                     record_metrics(wt, w_gradt, losst, metrics)
             except tf.errors.OutOfRangeError: pass 
-
             train_acc = sess.run(trainer.acc)
             metrics['train_acc'] = [train_acc]
 
@@ -122,13 +127,11 @@ def train(trainer):
                 best_sess = sess # save session
                 best_score = val_acc
                 last_improvement = 0
-                costs_inter = []
             else:
                 last_improvement += 1
             if last_improvement > require_improvement:
                 # Break out from the loop.
                 stop = True
-                sess = best_sess # restore session with the best score
 
             epoch_metrics = mean_over_dict(metrics)
             writer.write(epoch_metrics, e)
@@ -141,6 +144,7 @@ def train(trainer):
 
         # test set 
         try: 
+            sess = best_sess # restore session with the best score
             sess.run(trainer.acc_initializer) # reset accuracy metric
             sess.run(trainer.dset_init, feed_dict={
                 trainer.x_data: x_test, 
@@ -220,7 +224,7 @@ configs += new_configs
 
 print(trainers[-1], configs[-1])
 
-writer = NeptuneWriter('gebob19/672')
+writer = NeptuneWriter('gebob19/672-mnist')
 
 # trainers = [Baseline]
 # configs = [config]

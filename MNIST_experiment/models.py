@@ -3,6 +3,7 @@ import numpy as np
 import pathlib
 
 init_weights_path = pathlib.Path.home()/'Documents/gradschool/672/project/regularization_project/MNIST_experiment/init_weights.npy'
+# init_weights_path = '/content/MNIST_experiment/init_weights.npy'
 
 class Baseline():
     def __init__(self, config):

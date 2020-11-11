@@ -10,7 +10,10 @@ from models import *
 
 import sys 
 import pathlib 
+# for LOCAL use 
 sys.path.append(str(pathlib.Path.home()/'Documents/gradschool/672/project/regularization_project'))
+# for COLAB use 
+sys.path.append('/content/')
 from writers import NeptuneWriter
 
 print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))

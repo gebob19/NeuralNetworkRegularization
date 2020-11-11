@@ -226,8 +226,8 @@ print(trainers[-1], configs[-1])
 
 writer = NeptuneWriter('gebob19/672-mnist')
 
-# trainers = [Baseline]
-# configs = [config]
+trainers = [Baseline]
+configs = [config]
 
 for config, trainer_class in zip(configs, trainers): 
     config['experiment_name'] = trainer_class.__name__
@@ -240,4 +240,3 @@ for config, trainer_class in zip(configs, trainers):
     writer.fin()
 
 print('Complete!')
-# %%

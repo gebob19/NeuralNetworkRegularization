@@ -35,8 +35,8 @@ def py_line2example(line):
         w_start = (w - IMAGE_SIZE_W) // 2
         vid = vid[:, h_start: h_start + IMAGE_SIZE_H, w_start: w_start + IMAGE_SIZE_W, :]
     
-    # transpose to (c, temporal, h, w)
-    vid = vid.transpose((-1, 0, 1, 2))
+    # transpose to (c, h, w, temporal)
+    vid = vid.transpose((-1, 1, 2, 0))
     vid = vid / 255. * 2 - 1
 
     # one-hot encode label 
@@ -56,9 +56,56 @@ def mean_over_dict(custom_metrics):
     return mean_metrics
 
 #%%
+class Dropout(Baseline):
+    def __init__(self, config):
+        ## include dropout before dense layer 
+        self.dropout = tf.keras.layers.Dropout(config['DROPOUT_CONSTANT'])
+        self.dense1 = tf.keras.layers.Dense(4096)
+        self.dense2 = tf.keras.layers.Dense(config['NUM_CLASSES'], activation='softmax')
+        super().__init__(config)
+
+    def get_layers(self, config):
+        return [
+            tf.keras.layers.Conv3D(64, (3, 3, 3), strides=(1, 1, 1), padding='same'), 
+            tf.keras.layers.MaxPool3D((1, 2, 2), padding='same'),
+
+            tf.keras.layers.Conv3D(128, (3, 3, 3), strides=(1, 1, 1), padding='same'), 
+            tf.keras.layers.MaxPool3D((2, 2, 2), padding='same'),
+
+            tf.keras.layers.Conv3D(256, (3, 3, 3), strides=(1, 1, 1), padding='same'), 
+            tf.keras.layers.Conv3D(256, (3, 3, 3), strides=(1, 1, 1), padding='same'), 
+            tf.keras.layers.MaxPool3D((2, 2, 2), padding='same'),
+
+            tf.keras.layers.Conv3D(512, (3, 3, 3), strides=(1, 1, 1), padding='same'), 
+            tf.keras.layers.Conv3D(512, (3, 3, 3), strides=(1, 1, 1), padding='same'), 
+            tf.keras.layers.MaxPool3D((2, 2, 2), padding='same'),
+            
+            tf.keras.layers.Conv3D(512, (3, 3, 3), strides=(1, 1, 1), padding='same'), 
+            tf.keras.layers.Conv3D(512, (3, 3, 3), strides=(1, 1, 1), padding='same'), 
+            tf.keras.layers.MaxPool3D((2, 2, 2), padding='same'),
+
+            tf.keras.layers.Flatten(), 
+            # cut out dropout layer from this so we can include training flag 
+        ]
+    
+    def model(self, x):
+        x = super().model(x)
+        x = self.dropout(x, training=self.is_training)
+        x = self.dense1(x)
+        x = self.dense2(x)
+        return x 
+
 class Baseline():
-    def __init__(self, n_classes):
-        self.model = tf.keras.Sequential([
+    def __init__(self, config):
+        self.layers = self.get_layers(config)
+
+        self.optimizer = tf.train.AdamOptimizer(1e-2)
+        self.loss_func = tf.keras.losses.CategoricalCrossentropy(from_logits=True)
+        self.is_training = tf.placeholder_with_default(True, shape=())
+        self.build_graph()
+
+    def get_layers(self, config):
+        return [
             tf.keras.layers.Conv3D(64, (3, 3, 3), strides=(1, 1, 1), padding='same'), 
             tf.keras.layers.MaxPool3D((1, 2, 2), padding='same'),
 
@@ -79,12 +126,13 @@ class Baseline():
 
             tf.keras.layers.Flatten(), 
             tf.keras.layers.Dense(4096),
-            tf.keras.layers.Dense(n_classes, activation='softmax'),
-        ]) 
+            tf.keras.layers.Dense(config['NUM_CLASSES'], activation='softmax'),
+        ]
 
-        self.optimizer = tf.train.AdamOptimizer(1e-2)
-        self.loss_func = tf.keras.losses.CategoricalCrossentropy(from_logits=True)
-        self.build_graph()
+    def model(self, x):
+        for layer in self.layers: 
+            x = layer(x)
+        return x 
 
     def build_datapipeline(self):
         train_dataset = tf.data.TextLineDataset(['train.txt'])\
@@ -123,7 +171,7 @@ class Baseline():
 
         # model evaluation 
         xb, yb = dataset_iterator.get_next()
-        xb.set_shape([None, 3, 10, IMAGE_SIZE_H, IMAGE_SIZE_W])
+        xb.set_shape([None, 3, IMAGE_SIZE_H, IMAGE_SIZE_W, 10])
 
         logits = self.model(xb)
         self.loss = self.loss_func(yb, logits)
@@ -138,7 +186,8 @@ class Baseline():
 tf.reset_default_graph() # reset!
 EPOCHS = 1
 REQUIRED_IMPROVEMENT = 10
-trainer = Baseline(NUM_CLASSES)
+trial_run = True
+
 writer = NeptuneWriter('gebob19/672-asl')
 config = {
     'EPOCHS': EPOCHS,
@@ -148,9 +197,12 @@ config = {
     'BATCH_SIZE': BATCH_SIZE,
     'PREFETCH_BUFFER': PREFETCH_BUFFER,
     'NUM_CLASSES': NUM_CLASSES,
+    'DROPOUT_CONSTANT': 0.5,
 }
 config['experiment_name'] = type(trainer).__name__
 # writer.start(config)
+# trainer = Baseline(config)
+trainer = Dropout(config)
 
 with tf.Session() as sess:
     best_sess = sess
@@ -169,17 +221,16 @@ with tf.Session() as sess:
             trainer.val_iterator.initializer, trainer.test_iterator.initializer])
 
         # training 
-        i = 0
         try: 
             sess.run(trainer.acc_initializer) # reset accuracy metric
             while True:
                 _, loss, _ = sess.run([trainer.train_op, trainer.loss, \
                             trainer.acc_op], \
-                            feed_dict={trainer.handle_flag: train_handle_value})
+                            feed_dict={trainer.handle_flag: train_handle_value,
+                            trainer.is_training: True})
                 metrics['train_loss'].append(loss)
                 
-                i += 1
-                if i > 3: break 
+                if trial_run: break 
         except tf.errors.OutOfRangeError: pass 
         metrics['train_acc'] = [sess.run(trainer.acc)]
 
@@ -188,11 +239,11 @@ with tf.Session() as sess:
             sess.run(trainer.acc_initializer) # reset accuracy metric
             while True:
                 loss, _ = sess.run([trainer.loss, trainer.acc_op], \
-                    feed_dict={trainer.handle_flag: val_handle_value})        
+                    feed_dict={trainer.handle_flag: val_handle_value, 
+                    trainer.is_training: False})        
                 metrics['val_loss'].append(loss)
                 
-                i += 1
-                if i > 6: break 
+                if trial_run: break 
         except tf.errors.OutOfRangeError: pass 
         val_acc = sess.run(trainer.acc)
         metrics['val_acc'] = [val_acc]
@@ -223,18 +274,21 @@ with tf.Session() as sess:
         sess.run(trainer.acc_initializer) # reset accuracy metric
         while True:
             sess.run([trainer.acc_op], \
-                feed_dict={trainer.handle_flag: test_handle_value})        
-            i += 1
-            if i > 9: break 
+                feed_dict={
+                    trainer.handle_flag: test_handle_value, 
+                    trainer.is_training: False})        
+            if trial_run: break 
     except tf.errors.OutOfRangeError: pass 
 
     test_acc = sess.run(trainer.acc)
     writer.write({'test_acc': test_acc}, e+1)
     print('test_accuracy: ', test_acc)
-    
+
     writer.fin()
 
 #%%
+var = tf.trainable_variables()[0]
+
 #%%
 #%%
 # %%

@@ -8,7 +8,9 @@ class Baseline():
         self.is_training = tf.placeholder_with_default(True, shape=())
 
         self.batch_size = config['batch_size']
-        self.mlp = tf.keras.layers.Dense(10)
+
+        weights = np.load('init_weights.npy')
+        self.mlp = tf.keras.layers.Dense(10, kernel_initializer=tf.constant_initializer(weights))
         self.build_graph()
 
     def build_datapipeline(self):
@@ -97,7 +99,9 @@ class OrthogonalReg(Baseline):
         def orthogonal_reg(W):
             orthog_term = tf.abs(W @ tf.transpose(W) - tf.eye(W.shape.as_list()[0])).sum()
             return self.reg_constant * orthog_term
-        self.mlp = tf.keras.layers.Dense(10, kernel_regularizer=orthogonal_reg)
+        weights = np.load('init_weights.npy')
+        self.mlp = tf.keras.layers.Dense(10, kernel_regularizer=orthogonal_reg, \
+            kernel_initializer=tf.constant_initializer(weights))
 
 class L2Reg(Baseline):
     def __init__(self, config):

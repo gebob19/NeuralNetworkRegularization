@@ -67,7 +67,10 @@ def init_metrics():
         'wg_norm': [],
         'wg_mean': [],
         'wg_var': [],
-        'loss': []
+        'largest_singular_value': [],
+        'smallest_singular_value': [],
+        'sum_singular_value': [],
+        'loss': [],
     }
     return custom_metrics
 
@@ -79,6 +82,12 @@ def record_metrics(w, w_grad, loss, metrics):
     metrics['w_var'].append(np.var(w))
     metrics['wg_var'].append(np.var(w_grad))
     metrics['w_rank'].append(np.linalg.matrix_rank(w))
+
+    singular_values = np.linalg.svd(w, compute_uv=False)
+    metrics['largest_singular_value'].append(singular_values.max())
+    metrics['smallest_singular_value'].append(singular_values.min())
+    metrics['sum_singular_value'].append(singular_values.sum())
+
     metrics['loss'].append(loss)
 
 def train(trainer):

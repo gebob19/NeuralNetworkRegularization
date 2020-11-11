@@ -56,45 +56,6 @@ def mean_over_dict(custom_metrics):
     return mean_metrics
 
 #%%
-class Dropout(Baseline):
-    def __init__(self, config):
-        ## include dropout before dense layer 
-        self.dropout = tf.keras.layers.Dropout(config['DROPOUT_CONSTANT'])
-        self.dense1 = tf.keras.layers.Dense(4096)
-        self.dense2 = tf.keras.layers.Dense(config['NUM_CLASSES'], activation='softmax')
-        super().__init__(config)
-
-    def get_layers(self, config):
-        return [
-            tf.keras.layers.Conv3D(64, (3, 3, 3), strides=(1, 1, 1), padding='same'), 
-            tf.keras.layers.MaxPool3D((1, 2, 2), padding='same'),
-
-            tf.keras.layers.Conv3D(128, (3, 3, 3), strides=(1, 1, 1), padding='same'), 
-            tf.keras.layers.MaxPool3D((2, 2, 2), padding='same'),
-
-            tf.keras.layers.Conv3D(256, (3, 3, 3), strides=(1, 1, 1), padding='same'), 
-            tf.keras.layers.Conv3D(256, (3, 3, 3), strides=(1, 1, 1), padding='same'), 
-            tf.keras.layers.MaxPool3D((2, 2, 2), padding='same'),
-
-            tf.keras.layers.Conv3D(512, (3, 3, 3), strides=(1, 1, 1), padding='same'), 
-            tf.keras.layers.Conv3D(512, (3, 3, 3), strides=(1, 1, 1), padding='same'), 
-            tf.keras.layers.MaxPool3D((2, 2, 2), padding='same'),
-            
-            tf.keras.layers.Conv3D(512, (3, 3, 3), strides=(1, 1, 1), padding='same'), 
-            tf.keras.layers.Conv3D(512, (3, 3, 3), strides=(1, 1, 1), padding='same'), 
-            tf.keras.layers.MaxPool3D((2, 2, 2), padding='same'),
-
-            tf.keras.layers.Flatten(), 
-            # cut out dropout layer from this so we can include training flag 
-        ]
-    
-    def model(self, x):
-        x = super().model(x)
-        x = self.dropout(x, training=self.is_training)
-        x = self.dense1(x)
-        x = self.dense2(x)
-        return x 
-
 class Baseline():
     def __init__(self, config):
         self.layers = self.get_layers(config)
@@ -182,6 +143,45 @@ class Baseline():
 
         self.train_op = self.optimizer.minimize(self.loss)
 
+class Dropout(Baseline):
+    def __init__(self, config):
+        ## include dropout before dense layer 
+        self.dropout = tf.keras.layers.Dropout(config['DROPOUT_CONSTANT'])
+        self.dense1 = tf.keras.layers.Dense(4096)
+        self.dense2 = tf.keras.layers.Dense(config['NUM_CLASSES'], activation='softmax')
+        super().__init__(config)
+
+    def get_layers(self, config):
+        return [
+            tf.keras.layers.Conv3D(64, (3, 3, 3), strides=(1, 1, 1), padding='same'), 
+            tf.keras.layers.MaxPool3D((1, 2, 2), padding='same'),
+
+            tf.keras.layers.Conv3D(128, (3, 3, 3), strides=(1, 1, 1), padding='same'), 
+            tf.keras.layers.MaxPool3D((2, 2, 2), padding='same'),
+
+            tf.keras.layers.Conv3D(256, (3, 3, 3), strides=(1, 1, 1), padding='same'), 
+            tf.keras.layers.Conv3D(256, (3, 3, 3), strides=(1, 1, 1), padding='same'), 
+            tf.keras.layers.MaxPool3D((2, 2, 2), padding='same'),
+
+            tf.keras.layers.Conv3D(512, (3, 3, 3), strides=(1, 1, 1), padding='same'), 
+            tf.keras.layers.Conv3D(512, (3, 3, 3), strides=(1, 1, 1), padding='same'), 
+            tf.keras.layers.MaxPool3D((2, 2, 2), padding='same'),
+            
+            tf.keras.layers.Conv3D(512, (3, 3, 3), strides=(1, 1, 1), padding='same'), 
+            tf.keras.layers.Conv3D(512, (3, 3, 3), strides=(1, 1, 1), padding='same'), 
+            tf.keras.layers.MaxPool3D((2, 2, 2), padding='same'),
+
+            tf.keras.layers.Flatten(), 
+            # cut out dropout layer from this so we can include training flag 
+        ]
+    
+    def model(self, x):
+        x = super().model(x)
+        x = self.dropout(x, training=self.is_training)
+        x = self.dense1(x)
+        x = self.dense2(x)
+        return x 
+
 #%%
 tf.reset_default_graph() # reset!
 EPOCHS = 1
@@ -199,10 +199,11 @@ config = {
     'NUM_CLASSES': NUM_CLASSES,
     'DROPOUT_CONSTANT': 0.5,
 }
-config['experiment_name'] = type(trainer).__name__
 # writer.start(config)
-# trainer = Baseline(config)
-trainer = Dropout(config)
+trainer = Baseline(config)
+# trainer = Dropout(config)
+
+config['experiment_name'] = type(trainer).__name__
 
 with tf.Session() as sess:
     best_sess = sess
@@ -288,7 +289,10 @@ with tf.Session() as sess:
 
 #%%
 var = tf.trainable_variables()[0]
-
+# self.v = tf.random.normal((10, 1), mean=0., stddev=1.)
 #%%
+M = tf.reshape(var, [-1, var.shape[-1]])
+
+
 #%%
 # %%

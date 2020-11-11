@@ -1,5 +1,8 @@
 import tensorflow as tf 
 import numpy as np 
+import pathlib
+
+init_weights_path = pathlib.Path.home()/'Documents/gradschool/672/project/regularization_project/MNIST_experiment/init_weights.npy'
 
 class Baseline():
     def __init__(self, config):
@@ -9,7 +12,7 @@ class Baseline():
 
         self.batch_size = config['batch_size']
 
-        weights = np.load('init_weights.npy')
+        weights = np.load(str(init_weights_path))
         self.mlp = tf.keras.layers.Dense(10, kernel_initializer=tf.constant_initializer(weights))
         self.build_graph()
 
@@ -99,7 +102,7 @@ class OrthogonalReg(Baseline):
         def orthogonal_reg(W):
             orthog_term = tf.abs(W @ tf.transpose(W) - tf.eye(W.shape.as_list()[0])).sum()
             return self.reg_constant * orthog_term
-        weights = np.load('init_weights.npy')
+        weights = np.load(str(init_weights_path))
         self.mlp = tf.keras.layers.Dense(10, kernel_regularizer=orthogonal_reg, \
             kernel_initializer=tf.constant_initializer(weights))
 

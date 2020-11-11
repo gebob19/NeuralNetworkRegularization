@@ -137,6 +137,8 @@ class Baseline():
         logits = self.model(xb)
         self.loss = self.loss_func(yb, logits)
 
+        self.grads = tf.gradients(self.loss, tf.compat.v1.trainable_variables())
+
         self.acc, self.acc_op = tf.metrics.accuracy(tf.argmax(yb, 1), tf.argmax(logits, 1), name='acc')
         self.acc_vars = tf.get_collection(tf.GraphKeys.LOCAL_VARIABLES, scope="acc")
         self.acc_initializer = tf.variables_initializer(var_list=self.acc_vars)
@@ -149,7 +151,94 @@ class Dropout(Baseline):
         self.dropout = tf.keras.layers.Dropout(config['DROPOUT_CONSTANT'])
         self.dense1 = tf.keras.layers.Dense(4096)
         self.dense2 = tf.keras.layers.Dense(config['NUM_CLASSES'], activation='softmax')
+        self.flatten = tf.keras.layers.Flatten()
         super().__init__(config)
+
+    def get_layers(self, config):
+        return [
+            [tf.keras.layers.Conv3D(64, (3, 3, 3), strides=(1, 1, 1), padding='same'), 
+            tf.keras.layers.MaxPool3D((1, 2, 2), padding='same')],
+
+            [tf.keras.layers.Conv3D(128, (3, 3, 3), strides=(1, 1, 1), padding='same'), 
+            tf.keras.layers.MaxPool3D((2, 2, 2), padding='same')],
+
+            [tf.keras.layers.Conv3D(256, (3, 3, 3), strides=(1, 1, 1), padding='same'), 
+            tf.keras.layers.Conv3D(256, (3, 3, 3), strides=(1, 1, 1), padding='same'), 
+            tf.keras.layers.MaxPool3D((2, 2, 2), padding='same')],
+
+            [tf.keras.layers.Conv3D(512, (3, 3, 3), strides=(1, 1, 1), padding='same'), 
+            tf.keras.layers.Conv3D(512, (3, 3, 3), strides=(1, 1, 1), padding='same'), 
+            tf.keras.layers.MaxPool3D((2, 2, 2), padding='same')],
+            
+            [tf.keras.layers.Conv3D(512, (3, 3, 3), strides=(1, 1, 1), padding='same'), 
+            tf.keras.layers.Conv3D(512, (3, 3, 3), strides=(1, 1, 1), padding='same'), 
+            tf.keras.layers.MaxPool3D((2, 2, 2), padding='same')],
+        ]
+    
+    def model(self, x):
+        for block in self.layers: 
+            # apply dropout after each block 
+            for layer in block: 
+                x = layer(x)
+            x = self.dropout(x, training=self.is_training)
+
+        x = self.flatten(x)
+        x = self.dense1(x)
+        x = self.dense2(x)
+        return x 
+
+class SpectralReg(Baseline):
+    def __init__(self, config):
+        self.reg_constant = config['REG_CONSTANT']
+        self.variables = [(v, i) for i, v in enumerate(tf.trainable_variables()) if 'kernel' in v.name] 
+        self.vs = [tf.random.normal((v.shape[-1], 1), mean=0., stddev=1.) for v, _ in variables]
+        super().__init__(config)
+
+    def build_graph(self):
+        dataset_iterator = self.build_datapipeline()
+
+        # model evaluation 
+        xb, yb = dataset_iterator.get_next()
+        xb.set_shape([None, 3, IMAGE_SIZE_H, IMAGE_SIZE_W, 10])
+
+        logits = self.model(xb)
+        self.loss = self.loss_func(yb, logits)
+
+        # spectral norm reg
+        grads = tf.gradients(self.loss, tf.compat.v1.trainable_variables())
+        new_vs = []
+        for (var, idx), v in zip(self.variables, self.vs):
+            W_grad = tf.reshape(grads[idx], [-1, var.shape[-1]])
+            W = tf.reshape(var, [-1, var.shape[-1]])
+
+            u = W @ v
+            v = tf.transpose(W) @ u 
+            sigma = tf.norm(u, 2) / tf.norm(v, 2)
+            reg_value = sigma * (u @ tf.transpose(v))
+            W_grad += self.reg_constant * reg_value
+            
+            grads[idx] = W_grad
+            new_vs.append(v)
+        self.vs = new_vs
+
+        self.acc, self.acc_op = tf.metrics.accuracy(tf.argmax(yb, 1), tf.argmax(logits, 1), name='acc')
+        self.acc_vars = tf.get_collection(tf.GraphKeys.LOCAL_VARIABLES, scope="acc")
+        self.acc_initializer = tf.variables_initializer(var_list=self.acc_vars)
+
+        self.train_op = self.optimizer.apply_gradients(zip(grads, tf.compat.v1.trainable_variables()))
+
+class OrthogonalReg(Baseline):
+    def __init__(self, config):
+        self.reg_constant = config['REG_CONSTANT']
+        self.set_reg_method()
+        super().__init__(config)
+
+    def set_reg_method(self):
+        def orthogonal_reg(W):
+            W = tf.reshape(W, [-1, W.shape[-1]]) # flatten using same means as spectral 
+            orthog_term = tf.abs(W @ tf.transpose(W) - tf.eye(W.shape.as_list()[0])).sum()
+            return self.reg_constant * orthog_term
+        self.reg_method = orthogonal_reg
 
     def get_layers(self, config):
         return [
@@ -172,15 +261,30 @@ class Dropout(Baseline):
             tf.keras.layers.MaxPool3D((2, 2, 2), padding='same'),
 
             tf.keras.layers.Flatten(), 
-            # cut out dropout layer from this so we can include training flag 
+            # apply to last few dense layers 
+            tf.keras.layers.Dense(4096, kernel_regularizer=self.reg_method),
+            tf.keras.layers.Dense(config['NUM_CLASSES'], activation='softmax', kernel_regularizer=self.reg_method),
         ]
-    
-    def model(self, x):
-        x = super().model(x)
-        x = self.dropout(x, training=self.is_training)
-        x = self.dense1(x)
-        x = self.dense2(x)
-        return x 
+
+class L2Reg(OrthogonalReg):
+    def __init__(self, config):
+        super().__init__(config)
+
+    def set_reg_method(self):
+        def L2_reg(W):
+            norm = tf.norm(W, 2)
+            return self.reg_constant * norm
+        self.reg_method = L2_reg
+
+class L1Reg(OrthogonalReg):
+    def __init__(self, config):
+        super().__init__(config)
+
+    def set_reg_method(self):
+        def L1_reg(W):
+            norm = tf.norm(W, 1)
+            return self.reg_constant * norm
+        self.reg_method = L1_reg
 
 #%%
 tf.reset_default_graph() # reset!
@@ -198,10 +302,15 @@ config = {
     'PREFETCH_BUFFER': PREFETCH_BUFFER,
     'NUM_CLASSES': NUM_CLASSES,
     'DROPOUT_CONSTANT': 0.5,
+    'REG_CONSTANT': 0.01, 
 }
 # writer.start(config)
-trainer = Baseline(config)
-# trainer = Dropout(config)
+# trainer = Baseline(config)
+trainer = Dropout(config)
+# trainer = SpectralReg(config)
+# trainer = OrthogonalReg(config)
+# trainer = L2Reg(config)
+# trainer = L1Reg(config)
 
 config['experiment_name'] = type(trainer).__name__
 
@@ -288,11 +397,6 @@ with tf.Session() as sess:
     writer.fin()
 
 #%%
-var = tf.trainable_variables()[0]
-# self.v = tf.random.normal((10, 1), mean=0., stddev=1.)
 #%%
-M = tf.reshape(var, [-1, var.shape[-1]])
-
-
 #%%
 # %%

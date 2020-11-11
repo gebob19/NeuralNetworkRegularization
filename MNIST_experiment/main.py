@@ -111,9 +111,8 @@ def train(trainer):
             try: 
                 while True:
                     _, losst, _, wt, w_gradt = \
-                        sess.run([trainer.train_op, trainer.loss, \
+                        sess.run([trainer.train_op, trainer.loss,\
                             trainer.acc_op, trainer.w, trainer.w_grad])  
-                    
                     record_metrics(wt, w_gradt, losst, metrics)
             except tf.errors.OutOfRangeError: pass 
             train_acc = sess.run(trainer.acc)
@@ -233,7 +232,7 @@ configs += new_configs
 writer = NeptuneWriter('gebob19/672-mnist')
 
 if trial_run:
-    trainers = [Baseline]
+    trainers = [L1Reg]
     configs = [config]
 
 for config, trainer_class in zip(configs, trainers): 
@@ -248,3 +247,5 @@ for config, trainer_class in zip(configs, trainers):
     writer.fin()
 
 print('Complete!')
+
+# %%

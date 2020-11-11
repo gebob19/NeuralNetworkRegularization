@@ -39,6 +39,9 @@ class Baseline():
         logits = self.model(xb)
         self.loss = self.loss_func(yb, logits)
 
+        # add for regularization layers (L1, L2, etc. subclasses)
+        self.loss += tf.math.reduce_sum(self.mlp.losses)
+
         self.acc, self.acc_op = tf.metrics.accuracy(tf.argmax(yb, 1), tf.argmax(logits, 1), name='acc')
         self.acc_vars = tf.get_collection(tf.GraphKeys.LOCAL_VARIABLES, scope="acc")
         self.acc_initializer = tf.variables_initializer(var_list=self.acc_vars)
@@ -65,7 +68,7 @@ class SpectralReg(Baseline):
         self.v = tf.random.normal((10, 1), mean=0., stddev=1.)
         super().__init__(config)
 
-    def train(self, xb, yb):
+    def build_graph(self):
         self.x_data = tf.placeholder(np.float32, [None, 784])
         self.y_data = tf.placeholder(np.float32, [None, 10])
 

@@ -172,9 +172,10 @@ def train(trainer):
     return trainer, W 
 
 #%%
+trial_run = True 
 config = {
     'batch_size': 32,
-    'epochs': 1,
+    'epochs': 200 if not trial_run else 1,
     'reg_constant': 0.01,
     'dropout_constant': 0.3,
 }
@@ -226,24 +227,19 @@ for config, trainer_class in zip(configs, trainers):
         new_configs.append(new_confg)
         new_trainers.append(trainer_class)
         
-        new_confg = config.copy()
-        new_confg['dropout_constant'] = 0.2
-        new_configs.append(new_confg)
-        new_trainers.append(trainer_class)
-
 trainers += new_trainers
 configs += new_configs
 
-print(trainers[-1], configs[-1])
-
 writer = NeptuneWriter('gebob19/672-mnist')
 
-trainers = [Baseline]
-configs = [config]
+if trial_run:
+    trainers = [Baseline]
+    configs = [config]
 
 for config, trainer_class in zip(configs, trainers): 
     config['experiment_name'] = trainer_class.__name__
-    # writer.start(config)
+    if not trial_run:
+        writer.start(config)
 
     tf.reset_default_graph()
     full_trainer, W = train(trainer_class(config))

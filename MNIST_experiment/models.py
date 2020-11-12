@@ -13,9 +13,12 @@ class Baseline():
 
         self.batch_size = config['batch_size']
 
-        weights = np.load(str(init_weights_path))
-        self.mlp = tf.keras.layers.Dense(10, kernel_initializer=tf.constant_initializer(weights))
+        self.mlp = self.get_mlp()
         self.build_graph()
+
+    def get_mlp(self):
+        weights = np.load(str(init_weights_path))
+        return tf.keras.layers.Dense(10, kernel_initializer=tf.constant_initializer(weights))
 
     def build_datapipeline(self):
         dataset = tf.data.Dataset.from_tensor_slices((self.x_data, self.y_data))\
@@ -103,11 +106,14 @@ class OrthogonalReg(Baseline):
         self.reg_constant = config['reg_constant']
         super().__init__(config)
 
+    def get_mlp(self):
         def orthogonal_reg(W):
             orthog_term = tf.abs(W @ tf.transpose(W) - tf.eye(W.shape.as_list()[0])).sum()
             return self.reg_constant * orthog_term
+
         weights = np.load(str(init_weights_path))
-        self.mlp = tf.keras.layers.Dense(10, kernel_regularizer=orthogonal_reg, \
+        return tf.keras.layers.Dense(10, \
+            kernel_regularizer=orthogonal_reg, \
             kernel_initializer=tf.constant_initializer(weights))
 
 class L2Reg(Baseline):
@@ -115,20 +121,31 @@ class L2Reg(Baseline):
         self.reg_constant = config['reg_constant']
         super().__init__(config)
 
+    def get_mlp(self):
+        weights = np.load(str(init_weights_path))
         def L2_reg(W):
             norm = tf.norm(W, 2)
             return self.reg_constant * norm
-        self.mlp = tf.keras.layers.Dense(10, kernel_regularizer=L2_reg)
+
+        return tf.keras.layers.Dense(10, \
+            kernel_initializer=tf.constant_initializer(weights), \
+            kernel_regularizer=L2_reg)
 
 class L1Reg(Baseline):
     def __init__(self, config):
         self.reg_constant = config['reg_constant']
         super().__init__(config)
-
+    
+    def get_mlp(self):
+        weights = np.load(str(init_weights_path))
         def L1_reg(W):
             norm = tf.norm(W, 1)
             return self.reg_constant * norm
-        self.mlp = tf.keras.layers.Dense(10, kernel_regularizer=L1_reg)
+
+        return tf.keras.layers.Dense(10, \
+            kernel_initializer=tf.constant_initializer(weights), \
+            kernel_regularizer=L1_reg)
+
 
 # didn't perform well 
 class LipschitzReg(Baseline):

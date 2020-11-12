@@ -232,7 +232,7 @@ configs += new_configs
 writer = NeptuneWriter('gebob19/672-mnist')
 
 if trial_run:
-    trainers = [L1Reg]
+    trainers = [L2Reg]
     configs = [config]
 
 for config, trainer_class in zip(configs, trainers): 

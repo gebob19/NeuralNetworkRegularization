@@ -168,7 +168,7 @@ def train(trainer):
         writer.write({'test_acc': test_acc}, e+1)
 
         W = sess.run(trainer.w)
-    return trainer, W 
+    return trainer, W
 
 #%%
 trial_run = True 
@@ -190,7 +190,23 @@ for config, trainer_class in zip(configs, trainers):
     if trainer_class.__name__ == 'Baseline': 
         continue
 
-    if trainer_class.__name__ != 'DropoutReg':
+    if trainer_class.__name__ == 'OrthogonalReg':
+        new_confg = config.copy()
+        new_confg['reg_constant'] = 0.1
+        new_configs.append(new_confg)
+        new_trainers.append(trainer_class)
+        
+        new_confg = config.copy()
+        new_confg['reg_constant'] = 0.001
+        new_configs.append(new_confg)
+        new_trainers.append(trainer_class)
+        
+        new_confg = config.copy()
+        new_confg['reg_constant'] = 0.0001
+        new_configs.append(new_confg)
+        new_trainers.append(trainer_class)
+
+    elif trainer_class.__name__ != 'DropoutReg':
         new_confg = config.copy()
         new_confg['reg_constant'] *= 10
         new_configs.append(new_confg)

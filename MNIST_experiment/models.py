@@ -108,7 +108,7 @@ class OrthogonalReg(Baseline):
 
     def get_mlp(self):
         def orthogonal_reg(W):
-            orthog_term = tf.abs(W @ tf.transpose(W) - tf.eye(W.shape.as_list()[0])).sum()
+            orthog_term = tf.math.reduce_sum(tf.abs(W @ tf.transpose(W) - tf.eye(W.shape.as_list()[0])))
             return self.reg_constant * orthog_term
 
         weights = np.load(str(init_weights_path))

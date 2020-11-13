@@ -98,8 +98,8 @@ def train(trainer):
     with tf.compat.v1.Session() as sess: 
         best_sess = sess
         best_score = 0. 
-        sess.run(tf.compat.v1.global_variables_initializer())
-        sess.run(tf.compat.v1.local_variables_initializer())
+        sess.run([tf.compat.v1.global_variables_initializer(), \
+            tf.compat.v1.local_variables_initializer()])
 
         for e in range(config['epochs']):
             metrics = init_metrics()

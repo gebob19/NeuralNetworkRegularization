@@ -11,6 +11,7 @@ IMAGE_SIZE_H, IMAGE_SIZE_W = 224, 224
 BATCH_SIZE = 2
 PREFETCH_BUFFER = BATCH_SIZE
 NUM_CLASSES = 2000
+PATH2VIDEOS = '/Users/brennangebotys/Documents/gradschool/672/project/data/WLASL/start_kit/videos/'
 
 def mp4_2_numpy(filename):
     vid = imageio.get_reader(filename, 'ffmpeg')
@@ -19,7 +20,7 @@ def mp4_2_numpy(filename):
 
 def py_line2example(line):
     d = line.numpy().decode("utf-8").split(' ')
-    fn, label = d[0], int(d[1])
+    fn, label = '{}{}'.format(PATH2VIDEOS, d[0]), int(d[1])
     vid = mp4_2_numpy(fn)
     t, h, w, _ = vid.shape 
     

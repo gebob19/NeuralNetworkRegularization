@@ -37,7 +37,7 @@ def fn2label(fn, include_split=False):
 #     if split == 'train':
 #         train.append(x)
 #     elif split == 'test':
-#         test.append(x)
+#         test.append(x) 
 #     elif split == 'val': 
 #         val.append(x)
 #     else: 
@@ -50,6 +50,20 @@ def fn2label(fn, include_split=False):
 #             line = '{} {}\n'.format(fn, label)
 #             f.write(line)
 
-# #%%
-# import imageio 
-# vid = imageio.get_reader(filename, 'ffmpeg')
+#%%
+import imageio 
+from tqdm.notebook import tqdm 
+
+## Check to ensure all files are valid 
+for dset_file in ['test.txt', 'val.txt']:
+    with open(dset_file, 'r') as f: 
+        lines = f.readlines()
+    for line in tqdm(lines): 
+        try: 
+            fn = line.split(' ')[0]
+            imageio.get_reader(fn, 'ffmpeg')
+        except: 
+            print('failed: ', fn)
+
+
+# %%

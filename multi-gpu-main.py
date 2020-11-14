@@ -49,7 +49,7 @@ def train(trainer):
     loss_tensors, accuracy_tensors = [], []
 
     tower_grads = []
-    with i in range(N_GPUS):
+    for i in range(N_GPUS):
         with tf.device('/gpu:{}'.format(i)):
             with tf.name_scope('GPU_{}'.format(i)) as scope:
                 tower_grads.append(trainer.grads)
@@ -245,7 +245,6 @@ trainers += new_trainers
 configs += new_configs
 
 # if TRIAL_RUN:
-
 trainers = [Baseline]
 configs = [config]
 

@@ -49,7 +49,7 @@ class Baseline():
     def __init__(self, config):
         self.layers = self.get_layers(config)
 
-        self.optimizer = tf.compat.v1.train.AdamOptimizer(1e-2)
+        self.optimizer = tf.compat.v1.train.AdamOptimizer(1e-3)
         self.loss_func = tf.keras.losses.CategoricalCrossentropy(from_logits=True)
         self.is_training = tf.compat.v1.placeholder_with_default(True, shape=())
         self.layer_regularization = self.get_layer_regularization_flag()
@@ -61,26 +61,26 @@ class Baseline():
 
     def get_layers(self, config):
         return [
-            tf.keras.layers.Conv3D(64, (3, 3, 3), strides=(1, 1, 1), padding='same'), 
+            tf.keras.layers.Conv3D(64, (3, 3, 3), strides=(1, 1, 1), padding='same', activation='relu'), 
             tf.keras.layers.MaxPool3D((1, 2, 2), padding='same'),
 
-            tf.keras.layers.Conv3D(128, (3, 3, 3), strides=(1, 1, 1), padding='same'), 
+            tf.keras.layers.Conv3D(128, (3, 3, 3), strides=(1, 1, 1), padding='same', activation='relu'), 
             tf.keras.layers.MaxPool3D((2, 2, 2), padding='same'),
 
-            tf.keras.layers.Conv3D(256, (3, 3, 3), strides=(1, 1, 1), padding='same'), 
-            tf.keras.layers.Conv3D(256, (3, 3, 3), strides=(1, 1, 1), padding='same'), 
+            tf.keras.layers.Conv3D(256, (3, 3, 3), strides=(1, 1, 1), padding='same', activation='relu'), 
+            tf.keras.layers.Conv3D(256, (3, 3, 3), strides=(1, 1, 1), padding='same', activation='relu'), 
             tf.keras.layers.MaxPool3D((2, 2, 2), padding='same'),
 
-            tf.keras.layers.Conv3D(512, (3, 3, 3), strides=(1, 1, 1), padding='same'), 
-            tf.keras.layers.Conv3D(512, (3, 3, 3), strides=(1, 1, 1), padding='same'), 
+            tf.keras.layers.Conv3D(512, (3, 3, 3), strides=(1, 1, 1), padding='same', activation='relu'), 
+            tf.keras.layers.Conv3D(512, (3, 3, 3), strides=(1, 1, 1), padding='same', activation='relu'), 
             tf.keras.layers.MaxPool3D((2, 2, 2), padding='same'),
             
-            tf.keras.layers.Conv3D(512, (3, 3, 3), strides=(1, 1, 1), padding='same'), 
-            tf.keras.layers.Conv3D(512, (3, 3, 3), strides=(1, 1, 1), padding='same'), 
+            tf.keras.layers.Conv3D(512, (3, 3, 3), strides=(1, 1, 1), padding='same', activation='relu'), 
+            tf.keras.layers.Conv3D(512, (3, 3, 3), strides=(1, 1, 1), padding='same', activation='relu'), 
             tf.keras.layers.MaxPool3D((2, 2, 2), padding='same'),
 
             tf.keras.layers.Flatten(), 
-            tf.keras.layers.Dense(4096),
+            tf.keras.layers.Dense(4096, activation='relu'),
             tf.keras.layers.Dense(config['NUM_CLASSES'], activation='softmax'),
         ]
 
@@ -92,6 +92,8 @@ class Baseline():
     def build_datapipeline(self):
         train_dataset = tf.data.TextLineDataset([DATAFILE_PATH+'train.txt'])\
             .map(line2example)\
+            .cache()\
+            .shuffle(BATCH_SIZE, reshuffle_each_iteration=True)\
             .prefetch(PREFETCH_BUFFER)\
             .batch(BATCH_SIZE)
 

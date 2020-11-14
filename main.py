@@ -6,6 +6,7 @@ import cv2
 from writers import NeptuneWriter
 from models import * 
 from config import * 
+from tqdm import tqdm 
 
 print(tf.__version__)
 print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
@@ -17,12 +18,23 @@ def mean_over_dict(custom_metrics):
         mean_metrics[k] = np.mean(custom_metrics[k])
     return mean_metrics
 
+def init_metrics():
+    metrics = {'train_acc': [], 'val_acc': [], 'train_loss': [], 'val_loss': []}
+    return metrics
+
+def inf(): 
+    i = 0 
+    while True: 
+        yield i
+        i += 1 
+
 def train(trainer):
     with tf.compat.v1.Session() as sess:
         best_sess = sess
         best_score = 0. 
         last_improvement = 0
         stop = False 
+        step = 0
 
         sess.run([tf.compat.v1.global_variables_initializer(), \
             tf.compat.v1.local_variables_initializer()])
@@ -31,29 +43,37 @@ def train(trainer):
             sess.run([trainer.train_handle, trainer.val_handle, trainer.test_handle])
 
         for e in range(EPOCHS):
-            metrics = {'train_acc': [], 'val_acc': [], 'train_loss': [], 'val_loss': []}
+            metrics = init_metrics()
 
             sess.run([trainer.train_iterator.initializer, \
                 trainer.val_iterator.initializer, trainer.test_iterator.initializer])
 
             # training 
             try: 
+                print('Training...')
                 sess.run(trainer.acc_initializer) # reset accuracy metric
-                while True:
+                for _ in tqdm(inf()):
                     _, loss, _ = sess.run([trainer.train_op, trainer.loss, \
                                 trainer.acc_op], \
                                 feed_dict={trainer.handle_flag: train_handle_value,
                                 trainer.is_training: True})
                     metrics['train_loss'].append(loss)
+
+                    step += 1
+                    if step % 50 == 0: 
+                        metrics['train_acc'] = [sess.run(trainer.acc)]
+                        sess.run(trainer.acc_initializer) # reset accuracy metric
+                        mean_metrics = mean_over_dict(metrics)
+                        writer.write(mean_metrics, i)
+                        metrics = init_metrics()
                     
                     if TRIAL_RUN: break 
             except tf.errors.OutOfRangeError: pass 
-            metrics['train_acc'] = [sess.run(trainer.acc)]
 
             # validation 
             try: 
                 sess.run(trainer.acc_initializer) # reset accuracy metric
-                while True:
+                for i in tqdm(inf()):
                     loss, _ = sess.run([trainer.loss, trainer.acc_op], \
                         feed_dict={trainer.handle_flag: val_handle_value, 
                         trainer.is_training: False})        
@@ -104,7 +124,7 @@ def train(trainer):
     return trainer 
 
 #%%
-TRIAL_RUN = True
+TRIAL_RUN = False
 writer = NeptuneWriter('gebob19/672-asl')
 
 EPOCHS = 100 if not TRIAL_RUN else 1
@@ -189,9 +209,10 @@ for config, trainer_class in zip(configs, trainers):
 trainers += new_trainers
 configs += new_configs
 
-if TRIAL_RUN:
-    trainers = [Baseline]
-    configs = [config]
+# if TRIAL_RUN:
+
+trainers = [Baseline]
+configs = [config]
 
 for config, trainer_class in zip(configs, trainers): 
     config['experiment_name'] = trainer_class.__name__
@@ -199,7 +220,8 @@ for config, trainer_class in zip(configs, trainers):
         writer.start(config)
 
     tf.compat.v1.reset_default_graph()
-    full_trainer = train(trainer_class(config))
+    trainer = trainer_class(config)
+    full_trainer = train(trainer)
     
     writer.fin()
 

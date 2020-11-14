@@ -29,8 +29,7 @@ def py_line2example(line):
         w_start = (w - IMAGE_SIZE_W) // 2
         vid = vid[:, h_start: h_start + IMAGE_SIZE_H, w_start: w_start + IMAGE_SIZE_W, :]
     
-    # transpose to (temporal, h, w, c)
-    vid = vid.transpose((-1, 1, 2, 0))
+    # vid = vid.transpose((0, 1, 2, 0))
     vid = vid / 255. * 2 - 1
 
     # one-hot encode label 
@@ -61,22 +60,15 @@ class Baseline():
 
     def get_layers(self, config):
         return [
-            tf.keras.layers.Conv3D(64, (3, 3, 3), strides=(1, 1, 1), padding='same'), 
+            tf.keras.layers.Conv3D(64, (3, 3, 3), strides=(2, 2, 2), padding='same', activation='relu'), 
             tf.keras.layers.MaxPool3D((1, 2, 2), padding='same'),
 
-            tf.keras.layers.Conv3D(128, (3, 3, 3), strides=(1, 1, 1), padding='same'), 
+            tf.keras.layers.Conv3D(128, (3, 3, 3), strides=(1, 1, 1), padding='same', activation='relu'), 
+            tf.keras.layers.Conv3D(128, (3, 3, 3), strides=(1, 1, 1), padding='same', activation='relu'), 
             tf.keras.layers.MaxPool3D((2, 2, 2), padding='same'),
 
-            tf.keras.layers.Conv3D(256, (3, 3, 3), strides=(1, 1, 1), padding='same'), 
-            tf.keras.layers.Conv3D(256, (3, 3, 3), strides=(1, 1, 1), padding='same'), 
-            tf.keras.layers.MaxPool3D((2, 2, 2), padding='same'),
-
-            tf.keras.layers.Conv3D(512, (3, 3, 3), strides=(1, 1, 1), padding='same'), 
-            tf.keras.layers.Conv3D(512, (3, 3, 3), strides=(1, 1, 1), padding='same'), 
-            tf.keras.layers.MaxPool3D((2, 2, 2), padding='same'),
-            
-            tf.keras.layers.Conv3D(512, (3, 3, 3), strides=(1, 1, 1), padding='same'), 
-            tf.keras.layers.Conv3D(512, (3, 3, 3), strides=(1, 1, 1), padding='same'), 
+            tf.keras.layers.Conv3D(256, (3, 3, 3), strides=(1, 1, 1), padding='same', activation='relu'), 
+            tf.keras.layers.Conv3D(256, (3, 3, 3), strides=(1, 1, 1), padding='same', activation='relu'), 
             tf.keras.layers.MaxPool3D((2, 2, 2), padding='same'),
 
             tf.keras.layers.Flatten(), 
@@ -126,7 +118,7 @@ class Baseline():
 
         # model evaluation 
         xb, yb = dataset_iterator.get_next()
-        xb.set_shape([None, 3, IMAGE_SIZE_H, IMAGE_SIZE_W, 10])
+        xb.set_shape([None, 10, IMAGE_SIZE_H, IMAGE_SIZE_W, 3])
 
         logits = self.model(xb)
         self.loss = self.loss_func(yb, logits)
@@ -155,22 +147,15 @@ class Dropout(Baseline):
 
     def get_layers(self, config):
         return [
-            [tf.keras.layers.Conv3D(64, (3, 3, 3), strides=(1, 1, 1), padding='same'), 
+            [tf.keras.layers.Conv3D(64, (3, 3, 3), strides=(1, 1, 1), padding='same', activation='relu'), 
             tf.keras.layers.MaxPool3D((1, 2, 2), padding='same')],
 
-            [tf.keras.layers.Conv3D(128, (3, 3, 3), strides=(1, 1, 1), padding='same'), 
+            [tf.keras.layers.Conv3D(128, (3, 3, 3), strides=(1, 1, 1), padding='same', activation='relu'), 
+            tf.keras.layers.Conv3D(128, (3, 3, 3), strides=(1, 1, 1), padding='same', activation='relu'), 
             tf.keras.layers.MaxPool3D((2, 2, 2), padding='same')],
 
-            [tf.keras.layers.Conv3D(256, (3, 3, 3), strides=(1, 1, 1), padding='same'), 
-            tf.keras.layers.Conv3D(256, (3, 3, 3), strides=(1, 1, 1), padding='same'), 
-            tf.keras.layers.MaxPool3D((2, 2, 2), padding='same')],
-
-            [tf.keras.layers.Conv3D(512, (3, 3, 3), strides=(1, 1, 1), padding='same'), 
-            tf.keras.layers.Conv3D(512, (3, 3, 3), strides=(1, 1, 1), padding='same'), 
-            tf.keras.layers.MaxPool3D((2, 2, 2), padding='same')],
-            
-            [tf.keras.layers.Conv3D(512, (3, 3, 3), strides=(1, 1, 1), padding='same'), 
-            tf.keras.layers.Conv3D(512, (3, 3, 3), strides=(1, 1, 1), padding='same'), 
+            [tf.keras.layers.Conv3D(256, (3, 3, 3), strides=(1, 1, 1), padding='same', activation='relu'), 
+            tf.keras.layers.Conv3D(256, (3, 3, 3), strides=(1, 1, 1), padding='same', activation='relu'), 
             tf.keras.layers.MaxPool3D((2, 2, 2), padding='same')],
         ]
     
@@ -190,7 +175,7 @@ class SpectralReg(Baseline):
     def __init__(self, config):
         self.reg_constant = config['REG_CONSTANT']
         self.variables = [(v, i) for i, v in enumerate(tf.trainable_variables()) if 'kernel' in v.name] 
-        self.vs = [tf.random.normal((v.shape[-1], 1), mean=0., stddev=1.) for v, _ in variables]
+        self.vs = [tf.random.normal((v.shape[-1], 1), mean=0., stddev=1.) for v, _ in self.variables]
         super().__init__(config)
 
     def build_graph(self):
@@ -198,7 +183,7 @@ class SpectralReg(Baseline):
 
         # model evaluation 
         xb, yb = dataset_iterator.get_next()
-        xb.set_shape([None, 3, IMAGE_SIZE_H, IMAGE_SIZE_W, 10])
+        xb.set_shape([None, 10, IMAGE_SIZE_H, IMAGE_SIZE_W, 3])
 
         logits = self.model(xb)
         self.loss = self.loss_func(yb, logits)
@@ -255,30 +240,22 @@ class OrthogonalReg(Baseline):
             return self.reg_constant * orthog_term
 
         self.dense_reg_method = orthogonal_reg
-        self.kernel_reg_method = orthogonal_kernel_reg
+        self.kernel_reg_method = None
 
     def get_layers(self, config):
         return [
-            tf.keras.layers.Conv3D(64, (3, 3, 3), strides=(1, 1, 1), padding='same', kernel_regularizer=self.kernel_reg_method), 
+            tf.keras.layers.Conv3D(64, (3, 3, 3), strides=(1, 1, 1), padding='same', activation='relu', kernel_regularizer=self.kernel_reg_method), 
             tf.keras.layers.MaxPool3D((1, 2, 2), padding='same'),
 
-            tf.keras.layers.Conv3D(128, (3, 3, 3), strides=(1, 1, 1), padding='same', kernel_regularizer=self.kernel_reg_method), 
+            tf.keras.layers.Conv3D(128, (3, 3, 3), strides=(1, 1, 1), padding='same', activation='relu', kernel_regularizer=self.kernel_reg_method), 
+            tf.keras.layers.Conv3D(128, (3, 3, 3), strides=(1, 1, 1), padding='same', activation='relu', kernel_regularizer=self.kernel_reg_method), 
             tf.keras.layers.MaxPool3D((2, 2, 2), padding='same'),
 
-            tf.keras.layers.Conv3D(256, (3, 3, 3), strides=(1, 1, 1), padding='same', kernel_regularizer=self.kernel_reg_method), 
-            tf.keras.layers.Conv3D(256, (3, 3, 3), strides=(1, 1, 1), padding='same', kernel_regularizer=self.kernel_reg_method), 
-            tf.keras.layers.MaxPool3D((2, 2, 2), padding='same'),
-
-            tf.keras.layers.Conv3D(512, (3, 3, 3), strides=(1, 1, 1), padding='same', kernel_regularizer=self.kernel_reg_method), 
-            tf.keras.layers.Conv3D(512, (3, 3, 3), strides=(1, 1, 1), padding='same', kernel_regularizer=self.kernel_reg_method), 
-            tf.keras.layers.MaxPool3D((2, 2, 2), padding='same'),
-            
-            tf.keras.layers.Conv3D(512, (3, 3, 3), strides=(1, 1, 1), padding='same', kernel_regularizer=self.kernel_reg_method), 
-            tf.keras.layers.Conv3D(512, (3, 3, 3), strides=(1, 1, 1), padding='same', kernel_regularizer=self.kernel_reg_method), 
+            tf.keras.layers.Conv3D(256, (3, 3, 3), strides=(1, 1, 1), padding='same', activation='relu', kernel_regularizer=self.kernel_reg_method), 
+            tf.keras.layers.Conv3D(256, (3, 3, 3), strides=(1, 1, 1), padding='same', activation='relu', kernel_regularizer=self.kernel_reg_method), 
             tf.keras.layers.MaxPool3D((2, 2, 2), padding='same'),
 
             tf.keras.layers.Flatten(), 
-            # apply to last few dense layers 
             tf.keras.layers.Dense(4096, kernel_regularizer=self.dense_reg_method),
             tf.keras.layers.Dense(config['NUM_CLASSES'], activation='softmax', kernel_regularizer=self.dense_reg_method),
         ]

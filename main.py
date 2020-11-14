@@ -29,33 +29,34 @@ config = {
     'BATCH_SIZE': BATCH_SIZE, 
     'IMAGE_SIZE_H': IMAGE_SIZE_H ,
     'IMAGE_SIZE_W': IMAGE_SIZE_W,
-    'BATCH_SIZE': BATCH_SIZE,
     'PREFETCH_BUFFER': PREFETCH_BUFFER,
     'NUM_CLASSES': NUM_CLASSES,
     'DROPOUT_CONSTANT': 0.5,
     'REG_CONSTANT': 0.01, 
-    'REQUIRED_IMPROVEMENT': 10,
-}
+    'REQUIRED_IMPROVEMENT': REQUIRED_IMPROVEMENT,
+ }
 # writer.start(config)
 
 # trainer = Baseline(config)
 # trainer = Dropout(config)
-# trainer = SpectralReg(config)
-trainer = OrthogonalReg(config)
+trainer = SpectralReg(config)
+# trainer = OrthogonalReg(config)
 # trainer = L2Reg(config)
 # trainer = L1Reg(config)
 
 config['experiment_name'] = type(trainer).__name__
 
-with tf.Session(config=tf.ConfigProto(log_device_placement=True)) as sess:
+with tf.Session() as sess:
     best_sess = sess
     best_score = 0. 
     last_improvement = 0
     stop = False 
 
+    print('starting...')
     sess.run([tf.global_variables_initializer(), tf.local_variables_initializer()])
     train_handle_value, val_handle_value, test_handle_value = \
         sess.run([trainer.train_handle, trainer.val_handle, trainer.test_handle])
+    print('starting2...')
 
     for e in range(EPOCHS):
         metrics = {'train_acc': [], 'val_acc': [], 'train_loss': [], 'val_loss': []}
@@ -64,6 +65,7 @@ with tf.Session(config=tf.ConfigProto(log_device_placement=True)) as sess:
             trainer.val_iterator.initializer, trainer.test_iterator.initializer])
 
         # training 
+        print('Training')
         try: 
             sess.run(trainer.acc_initializer) # reset accuracy metric
             while True:
@@ -78,6 +80,7 @@ with tf.Session(config=tf.ConfigProto(log_device_placement=True)) as sess:
         metrics['train_acc'] = [sess.run(trainer.acc)]
 
         # validation 
+        print('Validation')
         try: 
             sess.run(trainer.acc_initializer) # reset accuracy metric
             while True:

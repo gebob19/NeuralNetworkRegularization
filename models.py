@@ -90,17 +90,17 @@ class Baseline():
         return x 
 
     def build_datapipeline(self):
-        train_dataset = tf.data.TextLineDataset(['top-k-glosses/train.txt'])\
+        train_dataset = tf.data.TextLineDataset([DATAFILE_PATH+'train.txt'])\
             .map(line2example)\
             .prefetch(PREFETCH_BUFFER)\
             .batch(BATCH_SIZE)
 
-        val_dataset = tf.data.TextLineDataset(['top-k-glosses/val.txt'])\
+        val_dataset = tf.data.TextLineDataset([DATAFILE_PATH+'val.txt'])\
             .map(line2example)\
             .prefetch(PREFETCH_BUFFER)\
             .batch(BATCH_SIZE)
         
-        test_dataset = tf.data.TextLineDataset(['top-k-glosses/test.txt'])\
+        test_dataset = tf.data.TextLineDataset([DATAFILE_PATH+'test.txt'])\
             .map(line2example)\
             .prefetch(PREFETCH_BUFFER)\
             .batch(BATCH_SIZE)

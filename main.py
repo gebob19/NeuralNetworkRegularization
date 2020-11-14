@@ -24,16 +24,12 @@ def train(trainer):
         last_improvement = 0
         stop = False 
 
-        import time 
-        start = time.time()
         sess.run([tf.compat.v1.global_variables_initializer(), \
             tf.compat.v1.local_variables_initializer()])
-        print(time.time() - start)
 
         train_handle_value, val_handle_value, test_handle_value = \
             sess.run([trainer.train_handle, trainer.val_handle, trainer.test_handle])
 
-        start = time.time()
         for e in range(EPOCHS):
             metrics = {'train_acc': [], 'val_acc': [], 'train_loss': [], 'val_loss': []}
 
@@ -87,8 +83,6 @@ def train(trainer):
             if stop: 
                 print('Early stopping...')
                 break 
-        
-        print(time.time() - start)
 
         # test 
         try: 
@@ -111,13 +105,13 @@ def train(trainer):
 
 #%%
 TRIAL_RUN = True
+writer = NeptuneWriter('gebob19/672-asl')
 
 EPOCHS = 100 if not TRIAL_RUN else 1
-BATCH_SIZE = BATCH_SIZE if not TRIAL_RUN else 2
-PREFETCH_BUFFER = PREFETCH_BUFFER if not TRIAL_RUN else 2
+BATCH_SIZE = BATCH_SIZE if not TRIAL_RUN else 32
+PREFETCH_BUFFER = PREFETCH_BUFFER if not TRIAL_RUN else 32
 REQUIRED_IMPROVEMENT = 10
 
-writer = NeptuneWriter('gebob19/672-asl')
 config = {
     'EPOCHS': EPOCHS,
     'BATCH_SIZE': BATCH_SIZE, 
@@ -134,6 +128,67 @@ config = {
 trainers = [Baseline, L1Reg, L2Reg, Dropout, SpectralReg, OrthogonalReg]
 configs = [config.copy(), config.copy(), config.copy(), config.copy(), config.copy(), config.copy()]
 
+# variations of regularization/dropout parameters 
+new_trainers, new_configs = [], []
+for config, trainer_class in zip(configs, trainers):
+    if trainer_class.__name__ == 'Baseline': 
+        continue
+
+    if trainer_class.__name__ == 'OrthogonalReg':
+        new_confg = config.copy()
+        new_confg['REG_CONSTANT'] = 0.1
+        new_configs.append(new_confg)
+        new_trainers.append(trainer_class)
+        
+        new_confg = config.copy()
+        new_confg['REG_CONSTANT'] = 0.001
+        new_configs.append(new_confg)
+        new_trainers.append(trainer_class)
+        
+        new_confg = config.copy()
+        new_confg['REG_CONSTANT'] = 0.0001
+        new_configs.append(new_confg)
+        new_trainers.append(trainer_class)
+
+    elif trainer_class.__name__ != 'DropoutReg':
+        new_confg = config.copy()
+        new_confg['REG_CONSTANT'] *= 10
+        new_configs.append(new_confg)
+        new_trainers.append(trainer_class)
+
+        new_confg = config.copy()
+        new_confg['REG_CONSTANT'] *= 100
+        new_configs.append(new_confg)
+        new_trainers.append(trainer_class)
+
+        new_confg = config.copy()
+        new_confg['REG_CONSTANT'] /= 10
+        new_configs.append(new_confg)
+        new_trainers.append(trainer_class)
+
+        new_confg = config.copy()
+        new_confg['REG_CONSTANT'] /= 100
+        new_configs.append(new_confg)
+        new_trainers.append(trainer_class)
+    else: 
+        new_confg = config.copy()
+        new_confg['DROPOUT_CONSTANT'] = 0.5
+        new_configs.append(new_confg)
+        new_trainers.append(trainer_class)
+
+        new_confg = config.copy()
+        new_confg['DROPOUT_CONSTANT'] = 0.8
+        new_configs.append(new_confg)
+        new_trainers.append(trainer_class)
+
+        new_confg = config.copy()
+        new_confg['DROPOUT_CONSTANT'] = 0.1
+        new_configs.append(new_confg)
+        new_trainers.append(trainer_class)
+        
+trainers += new_trainers
+configs += new_configs
+
 if TRIAL_RUN:
     trainers = [Baseline]
     configs = [config]
@@ -145,28 +200,7 @@ for config, trainer_class in zip(configs, trainers):
 
     tf.compat.v1.reset_default_graph()
     full_trainer = train(trainer_class(config))
-    log_weights(W, writer)
     
     writer.fin()
 
 print('Complete!')
-
-# # %%
-# inp = np.random.randn(4, 10, 224, 224, 5)
-# conv = tf.keras.layers.Conv3D(64, (3, 3, 3))
-# conv(inp).shape
-
-# # %%
-# W = conv.weights[0]
-
-# # %%
-# I = np.zeros((3, 3, 3))
-# I[1, 1, 1] = 1
-# I = tf.constant(I)
-# I3d = tf.transpose(tf.stack([tf.stack([I] * W.shape.as_list()[-2])] * W.shape.as_list()[-1]), perm=[2, 3, 4, 1, 0])
-
-# # %%
-# with tf.Session() as sess: 
-#     print(sess.run(I3d[:, :, :, 0, 0]))
-
-# # %%

@@ -15,7 +15,8 @@ print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('
 def mean_over_dict(custom_metrics):
     mean_metrics = {}
     for k in custom_metrics.keys(): 
-        mean_metrics[k] = np.mean(custom_metrics[k])
+        if len(custom_metrics[k]) > 0:
+            mean_metrics[k] = np.mean(custom_metrics[k])
     return mean_metrics
 
 def init_metrics():
@@ -64,7 +65,7 @@ def train(trainer):
                         metrics['train_acc'] = [sess.run(trainer.acc)]
                         sess.run(trainer.acc_initializer) # reset accuracy metric
                         mean_metrics = mean_over_dict(metrics)
-                        writer.write(mean_metrics, i)
+                        writer.write(mean_metrics, step)
                         metrics = init_metrics()
                     
                     if TRIAL_RUN: break 
@@ -96,7 +97,7 @@ def train(trainer):
                 stop = True
 
             mean_metrics = mean_over_dict(metrics)
-            writer.write(mean_metrics, e)
+            writer.write(mean_metrics, step)
 
             print("{} {}".format(e, mean_metrics))
 

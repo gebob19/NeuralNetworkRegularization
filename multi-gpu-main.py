@@ -45,117 +45,118 @@ def average_gradients(tower_grads):
 
 
 def train(trainer):
-    # MULTI-GPU SETUP 
-    loss_tensors, accuracy_tensors = [], []
+    with tf.device('/cpu:0'):
+        # MULTI-GPU SETUP 
+        loss_tensors, accuracy_tensors = [], []
 
-    tower_grads = []
-    for i in range(N_GPUS):
-        with tf.device('/gpu:{}'.format(i)):
-            with tf.name_scope('GPU_{}'.format(i)) as scope:
-                tower_grads.append(trainer.grads)
-                loss_tensors.append(trainer.loss)
-                accuracy_tensors.append(trainer.acc)
+        tower_grads = []
+        for i in range(N_GPUS):
+            with tf.device('/gpu:{}'.format(i)):
+                with tf.name_scope('GPU_{}'.format(i)) as scope:
+                    tower_grads.append(trainer.grads)
+                    loss_tensors.append(trainer.loss)
+                    accuracy_tensors.append(trainer.acc)
 
-    grads_and_vars = average_gradients(tower_grads)
-    apply_grads = trainer.optimizer.apply_gradients(grads_and_vars)
-    train_op = tf.group(apply_grads, name='train_op')
+        grads_and_vars = average_gradients(tower_grads)
+        apply_grads = trainer.optimizer.apply_gradients(grads_and_vars)
+        train_op = tf.group(apply_grads, name='train_op')
 
-    avg_loss = tf.reduce_mean(loss_tensors)
-    avg_acc = tf.reduce_mean(accuracy_tensors)
+        avg_loss = tf.reduce_mean(loss_tensors)
+        avg_acc = tf.reduce_mean(accuracy_tensors)
 
-    ## softplacement for placement across available GPUs
-    with tf.compat.v1.Session(config=tf.ConfigProto(allow_soft_placement=True)) as sess:
-        best_sess = sess
-        best_score = 0. 
-        last_improvement = 0
-        stop = False 
-        step = 0
+        ## softplacement for placement across available GPUs
+        with tf.compat.v1.Session(config=tf.ConfigProto(allow_soft_placement=True)) as sess:
+            best_sess = sess
+            best_score = 0. 
+            last_improvement = 0
+            stop = False 
+            step = 0
 
-        sess.run([tf.compat.v1.global_variables_initializer(), \
-            tf.compat.v1.local_variables_initializer()])
+            sess.run([tf.compat.v1.global_variables_initializer(), \
+                tf.compat.v1.local_variables_initializer()])
 
-        train_handle_value, val_handle_value, test_handle_value = \
-            sess.run([trainer.train_handle, trainer.val_handle, trainer.test_handle])
+            train_handle_value, val_handle_value, test_handle_value = \
+                sess.run([trainer.train_handle, trainer.val_handle, trainer.test_handle])
 
-        for e in range(EPOCHS):
-            metrics = init_metrics()
+            for e in range(EPOCHS):
+                metrics = init_metrics()
 
-            sess.run([trainer.train_iterator.initializer, \
-                trainer.val_iterator.initializer, trainer.test_iterator.initializer])
+                sess.run([trainer.train_iterator.initializer, \
+                    trainer.val_iterator.initializer, trainer.test_iterator.initializer])
 
-            # training 
+                # training 
+                try: 
+                    print('Training...')
+                    sess.run(trainer.acc_initializer) # reset accuracy metric
+                    for _ in tqdm(inf()):
+                        ## RUN SESS WITH MULTI-GPU VALUES 
+                        _, loss, acc = sess.run([train_op, avg_loss, \
+                                    avg_acc], \
+                                    feed_dict={trainer.handle_flag: train_handle_value,
+                                    trainer.is_training: True})
+                        metrics['train_loss'].append(loss)
+                        metrics['train_acc'].append(acc)
+
+                        step += 1
+                        if step % 50 == 0: 
+                            mean_metrics = mean_over_dict(metrics)
+                            writer.write(mean_metrics, i)
+                            metrics = init_metrics()
+                        
+                        if TRIAL_RUN: break 
+                except tf.errors.OutOfRangeError: pass 
+
+                # validation 
+                try: 
+                    sess.run(trainer.acc_initializer) # reset accuracy metric
+                    for i in tqdm(inf()):
+                        loss, _ = sess.run([trainer.loss, trainer.acc_op], \
+                            feed_dict={trainer.handle_flag: val_handle_value, 
+                            trainer.is_training: False})        
+                        metrics['val_loss'].append(loss)
+                        
+                        if TRIAL_RUN: break 
+                except tf.errors.OutOfRangeError: pass 
+                val_acc = sess.run(trainer.acc)
+                metrics['val_acc'] = [val_acc]
+
+                # early stopping
+                ## https://stackoverflow.com/questions/46428604/how-to-implement-early-stopping-in-tensorflow
+                if val_acc > best_score:
+                    best_sess = sess # save session
+                    best_score = val_acc
+                else:
+                    last_improvement += 1
+                if last_improvement > REQUIRED_IMPROVEMENT:
+                    # Break out from the loop.
+                    stop = True
+
+                mean_metrics = mean_over_dict(metrics)
+                writer.write(mean_metrics, e)
+
+                print("{} {}".format(e, mean_metrics))
+
+                if stop: 
+                    print('Early stopping...')
+                    break 
+
+            # test 
             try: 
-                print('Training...')
+                sess = best_sess # restore session with the best score
                 sess.run(trainer.acc_initializer) # reset accuracy metric
-                for _ in tqdm(inf()):
-                    ## RUN SESS WITH MULTI-GPU VALUES 
-                    _, loss, acc = sess.run([train_op, avg_loss, \
-                                avg_acc], \
-                                feed_dict={trainer.handle_flag: train_handle_value,
-                                trainer.is_training: True})
-                    metrics['train_loss'].append(loss)
-                    metrics['train_acc'].append(acc)
-
-                    step += 1
-                    if step % 50 == 0: 
-                        mean_metrics = mean_over_dict(metrics)
-                        writer.write(mean_metrics, i)
-                        metrics = init_metrics()
-                    
+                while True:
+                    sess.run([trainer.acc_op], \
+                        feed_dict={
+                            trainer.handle_flag: test_handle_value, 
+                            trainer.is_training: False})        
                     if TRIAL_RUN: break 
             except tf.errors.OutOfRangeError: pass 
 
-            # validation 
-            try: 
-                sess.run(trainer.acc_initializer) # reset accuracy metric
-                for i in tqdm(inf()):
-                    loss, _ = sess.run([trainer.loss, trainer.acc_op], \
-                        feed_dict={trainer.handle_flag: val_handle_value, 
-                        trainer.is_training: False})        
-                    metrics['val_loss'].append(loss)
-                    
-                    if TRIAL_RUN: break 
-            except tf.errors.OutOfRangeError: pass 
-            val_acc = sess.run(trainer.acc)
-            metrics['val_acc'] = [val_acc]
+            test_acc = sess.run(trainer.acc)
+            writer.write({'test_acc': test_acc}, e+1)
+            print('test_accuracy: ', test_acc)
 
-            # early stopping
-            ## https://stackoverflow.com/questions/46428604/how-to-implement-early-stopping-in-tensorflow
-            if val_acc > best_score:
-                best_sess = sess # save session
-                best_score = val_acc
-            else:
-                last_improvement += 1
-            if last_improvement > REQUIRED_IMPROVEMENT:
-                # Break out from the loop.
-                stop = True
-
-            mean_metrics = mean_over_dict(metrics)
-            writer.write(mean_metrics, e)
-
-            print("{} {}".format(e, mean_metrics))
-
-            if stop: 
-                print('Early stopping...')
-                break 
-
-        # test 
-        try: 
-            sess = best_sess # restore session with the best score
-            sess.run(trainer.acc_initializer) # reset accuracy metric
-            while True:
-                sess.run([trainer.acc_op], \
-                    feed_dict={
-                        trainer.handle_flag: test_handle_value, 
-                        trainer.is_training: False})        
-                if TRIAL_RUN: break 
-        except tf.errors.OutOfRangeError: pass 
-
-        test_acc = sess.run(trainer.acc)
-        writer.write({'test_acc': test_acc}, e+1)
-        print('test_accuracy: ', test_acc)
-
-        writer.fin()
+            writer.fin()
     return trainer 
 
 #%%

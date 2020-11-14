@@ -37,9 +37,9 @@ config = {
  }
 # writer.start(config)
 
-# trainer = Baseline(config)
+trainer = Baseline(config)
 # trainer = Dropout(config)
-trainer = SpectralReg(config)
+# trainer = SpectralReg(config)
 # trainer = OrthogonalReg(config)
 # trainer = L2Reg(config)
 # trainer = L1Reg(config)
@@ -52,11 +52,9 @@ with tf.Session() as sess:
     last_improvement = 0
     stop = False 
 
-    print('starting...')
     sess.run([tf.global_variables_initializer(), tf.local_variables_initializer()])
     train_handle_value, val_handle_value, test_handle_value = \
         sess.run([trainer.train_handle, trainer.val_handle, trainer.test_handle])
-    print('starting2...')
 
     for e in range(EPOCHS):
         metrics = {'train_acc': [], 'val_acc': [], 'train_loss': [], 'val_loss': []}
@@ -131,18 +129,3 @@ with tf.Session() as sess:
     print('test_accuracy: ', test_acc)
 
     writer.fin()
-
-# #%%
-# x = np.random.randn(3, 10, 223, 223, 4)
-# conv = tf.keras.layers.Conv3D(64, (3, 3, 3), strides=(1, 1, 1), padding='same')
-# conv(x).shape
-
-# #%%
-# W = conv.weights[0]
-
-# #%%
-# I = np.zeros((3, 3, 3))
-# I[1, 1, 1] = 1
-# I3d = np.stack([[np.stack([I] * W.shape[-2].value)] * W.shape[-1].value])[0].transpose((2, 3, 4, 1, 0))
-
-# %%

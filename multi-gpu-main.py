@@ -43,23 +43,36 @@ def average_gradients(tower_grads):
         average_grads.append(grad_and_var)
     return average_grads
 
-
 def train(trainer):
     with tf.device('/cpu:0'):
         # MULTI-GPU SETUP 
         loss_tensors, accuracy_tensors = [], []
 
+        # get data input 
+        xb, yb = trainer.dataset_iterator.get_next()
+        xb.set_shape([None, 10, IMAGE_SIZE_H, IMAGE_SIZE_W, 3])
+
+        def compute_loss(xb, yb):
+            logits = trainer.model(xb)
+            loss = trainer.loss_func(yb, logits)
+            return loss
+
         tower_grads = []
         for i in range(N_GPUS):
             with tf.device('/gpu:{}'.format(i)):
                 with tf.name_scope('GPU_{}'.format(i)) as scope:
-                    tower_grads.append(trainer.grads)
-                    loss_tensors.append(trainer.loss)
-                    accuracy_tensors.append(trainer.acc)
+                    loss = compute_loss(xb, yb)
+                    grads = trainer.optimizer.compute_gradients(loss)
 
-        grads_and_vars = average_gradients(tower_grads)
-        apply_grads = trainer.optimizer.apply_gradients(grads_and_vars)
-        train_op = tf.group(apply_grads, name='train_op')
+                    tower_grads.append(grads)
+                    loss_tensors.append(loss)
+                    update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS, scope)
+
+        grads = average_gradients(tower_grads)
+        apply_gradient_op = trainer.optimizer.apply_gradients(grads)
+
+        with tf.control_dependencies(update_ops):
+            train_op = tf.group(apply_gradient_op, name='train_op')
 
         avg_loss = tf.reduce_mean(loss_tensors)
         avg_acc = tf.reduce_mean(accuracy_tensors)

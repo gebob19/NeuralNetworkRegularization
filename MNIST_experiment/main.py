@@ -98,8 +98,14 @@ def train(trainer):
     with tf.compat.v1.Session() as sess: 
         best_sess = sess
         best_score = 0. 
+
+        print(tf.global_variables())
+
+        import time
+        start = time.time()
         sess.run([tf.compat.v1.global_variables_initializer(), \
             tf.compat.v1.local_variables_initializer()])
+        print(time.time() - start)
 
         for e in range(config['epochs']):
             metrics = init_metrics()
@@ -248,7 +254,7 @@ configs += new_configs
 writer = NeptuneWriter('gebob19/672-mnist')
 
 if trial_run:
-    trainers = [L2Reg]
+    trainers = [Baseline]
     configs = [config]
 
 for config, trainer_class in zip(configs, trainers): 

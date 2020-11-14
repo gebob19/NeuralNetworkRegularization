@@ -29,11 +29,11 @@ def train(trainer):
         sess.run([tf.compat.v1.global_variables_initializer(), \
             tf.compat.v1.local_variables_initializer()])
         print(time.time() - start)
-        1/0
 
         train_handle_value, val_handle_value, test_handle_value = \
             sess.run([trainer.train_handle, trainer.val_handle, trainer.test_handle])
 
+        start = time.time()
         for e in range(EPOCHS):
             metrics = {'train_acc': [], 'val_acc': [], 'train_loss': [], 'val_loss': []}
 
@@ -87,6 +87,8 @@ def train(trainer):
             if stop: 
                 print('Early stopping...')
                 break 
+        
+        print(time.time() - start)
 
         # test 
         try: 
@@ -108,17 +110,20 @@ def train(trainer):
     return trainer 
 
 #%%
-EPOCHS = 100
-REQUIRED_IMPROVEMENT = 10
 TRIAL_RUN = True
+
+EPOCHS = 100 if not TRIAL_RUN else 1
+BATCH_SIZE = BATCH_SIZE if not TRIAL_RUN else 2
+PREFETCH_BUFFER = PREFETCH_BUFFER if not TRIAL_RUN else 2
+REQUIRED_IMPROVEMENT = 10
 
 writer = NeptuneWriter('gebob19/672-asl')
 config = {
-    'EPOCHS': EPOCHS if not TRIAL_RUN else 1,
-    'BATCH_SIZE': BATCH_SIZE if not TRIAL_RUN else 2, 
-    'IMAGE_SIZE_H': IMAGE_SIZE_H ,
+    'EPOCHS': EPOCHS,
+    'BATCH_SIZE': BATCH_SIZE, 
+    'IMAGE_SIZE_H': IMAGE_SIZE_H,
     'IMAGE_SIZE_W': IMAGE_SIZE_W,
-    'PREFETCH_BUFFER': PREFETCH_BUFFER if not TRIAL_RUN else 2,
+    'PREFETCH_BUFFER': PREFETCH_BUFFER,
     'NUM_CLASSES': NUM_CLASSES,
     'DROPOUT_CONSTANT': 0.5,
     'REG_CONSTANT': 0.01, 
@@ -130,7 +135,7 @@ trainers = [Baseline, L1Reg, L2Reg, Dropout, SpectralReg, OrthogonalReg]
 configs = [config.copy(), config.copy(), config.copy(), config.copy(), config.copy(), config.copy()]
 
 if TRIAL_RUN:
-    trainers = [OrthogonalReg]
+    trainers = [Baseline]
     configs = [config]
 
 for config, trainer_class in zip(configs, trainers): 
@@ -146,5 +151,22 @@ for config, trainer_class in zip(configs, trainers):
 
 print('Complete!')
 
-# %%
+# # %%
+# inp = np.random.randn(4, 10, 224, 224, 5)
+# conv = tf.keras.layers.Conv3D(64, (3, 3, 3))
+# conv(inp).shape
 
+# # %%
+# W = conv.weights[0]
+
+# # %%
+# I = np.zeros((3, 3, 3))
+# I[1, 1, 1] = 1
+# I = tf.constant(I)
+# I3d = tf.transpose(tf.stack([tf.stack([I] * W.shape.as_list()[-2])] * W.shape.as_list()[-1]), perm=[2, 3, 4, 1, 0])
+
+# # %%
+# with tf.Session() as sess: 
+#     print(sess.run(I3d[:, :, :, 0, 0]))
+
+# # %%

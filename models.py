@@ -53,6 +53,7 @@ class Baseline():
         self.loss_func = tf.keras.losses.CategoricalCrossentropy(from_logits=True)
         self.is_training = tf.compat.v1.placeholder_with_default(True, shape=())
         self.layer_regularization = self.get_layer_regularization_flag()
+
         self.build_graph()
 
     def get_layer_regularization_flag(self):
@@ -243,8 +244,8 @@ class OrthogonalReg(Baseline):
         def orthogonal_kernel_reg(W):
             I = np.zeros((3, 3, 3))
             I[1, 1, 1] = 1
-            I3d = np.stack([ np.stack([I] * W.shape.as_list()[-2]) ] * W.shape.as_list()[-1]).transpose((2, 3, 4, 1, 0))
-            tf_3deye = tf.constant(I3d, dtype=tf.float32)
+            I = tf.constant(I, dtype=tf.float32)
+            tf_3deye = tf.transpose(tf.stack([tf.stack([I] * W.shape.as_list()[-2])] * W.shape.as_list()[-1]), perm=[2, 3, 4, 1, 0])
 
             orthog_term = tf.math.reduce_sum(
                 tf.abs(

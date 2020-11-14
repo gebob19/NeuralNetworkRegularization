@@ -7,6 +7,7 @@ from tqdm import tqdm
 
 data_path = pathlib.Path.home()/'Documents/gradschool/672/project/data/WLASL/start_kit/videos/'
 filenames = list(data_path.iterdir())
+stems = [fn.stem for fn in filenames]
 
 #%%
 def get_metadata():
@@ -97,5 +98,35 @@ for dset_file in ['test.txt', 'val.txt']:
         except: 
             print('failed: ', fn)
 
+
+# %%
+## Check to ensure all files are valid 
+path = 'top-k-glosses/300/'
+train, test, val = [], [], []
+for dset_file in ['train.txt', 'test.txt', 'val.txt']:
+    with open(path+dset_file, 'r') as f: 
+        lines = f.readlines()
+
+    for line in tqdm(lines): 
+        try: 
+            fn = line.split(' ')[0]
+            label = line.split(' ')[1]
+            if fn[:-4] in stems: 
+                x = (fn, label)
+                if dset_file == 'train.txt':
+                    train.append(x)
+                elif dset_file == 'test.txt':
+                    test.append(x)
+                else: 
+                    val.append(x)
+        except: 
+            print('failed: ', fn)
+
+# %%
+for dset_file, data in zip(['train.txt', 'test.txt', 'val.txt'], [train, test, val]):
+    with open(path+dset_file, 'w') as f: 
+        for fn, label in tqdm(data):
+            line = '{} {}'.format(fn, label)
+            f.write(line)
 
 # %%

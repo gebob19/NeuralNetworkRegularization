@@ -15,7 +15,8 @@ print("Num GPUs Available: ", N_GPUS)
 def mean_over_dict(custom_metrics):
     mean_metrics = {}
     for k in custom_metrics.keys(): 
-        mean_metrics[k] = np.mean(custom_metrics[k])
+        if len(custom_metrics[k]) > 0:
+            mean_metrics[k] = np.mean(custom_metrics[k])
     return mean_metrics
 
 def init_metrics():
@@ -28,6 +29,7 @@ def inf():
         yield i
         i += 1 
 
+## FROM https://github.com/tensorflow/tensorflow/blob/r0.7/tensorflow/models/image/cifar10/cifar10.py
 def average_gradients(tower_grads):
     average_grads = []
     for grad_and_vars in zip(*tower_grads):
@@ -42,23 +44,38 @@ def average_gradients(tower_grads):
         average_grads.append(grad_and_var)
     return average_grads
 
-
 def train(trainer):
     with tf.device('/cpu:0'):
         # MULTI-GPU SETUP 
         loss_tensors, accuracy_tensors = [], []
 
+        # get data input 
+        xb, yb = trainer.dataset_iterator.get_next()
+        xb.set_shape([None, 10, IMAGE_SIZE_H, IMAGE_SIZE_W, 3])
+
+        def compute_loss_acc(xb, yb):
+            logits = trainer.model(xb)
+            loss = trainer.loss_func(yb, logits)
+            acc, _ = tf.compat.v1.metrics.accuracy(tf.argmax(yb, 1), tf.argmax(logits, 1), name='acc')
+            return loss, acc
+
         tower_grads = []
-        with i in range(N_GPUS):
+        for i in range(N_GPUS):
             with tf.device('/gpu:{}'.format(i)):
                 with tf.name_scope('GPU_{}'.format(i)) as scope:
-                    tower_grads.append(trainer.grads)
-                    loss_tensors.append(trainer.loss)
-                    accuracy_tensors.append(trainer.acc)
+                    loss, acc = compute_loss_acc(xb, yb)
+                    grads = trainer.optimizer.compute_gradients(loss)
 
-        grads_and_vars = average_gradients(tower_grads)
-        apply_grads = trainer.optimizer.apply_gradients(grads_and_vars)
-        train_op = tf.group(apply_grads, name='train_op')
+                    tower_grads.append(grads)
+                    loss_tensors.append(loss)
+                    accuracy_tensors.append(acc)
+                    update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS, scope)
+
+        grads = average_gradients(tower_grads)
+        apply_gradient_op = trainer.optimizer.apply_gradients(grads)
+
+        with tf.control_dependencies(update_ops):
+            train_op = tf.group(apply_gradient_op, name='train_op')
 
         avg_loss = tf.reduce_mean(loss_tensors)
         avg_acc = tf.reduce_mean(accuracy_tensors)
@@ -68,7 +85,7 @@ def train(trainer):
             best_sess = sess
             best_score = 0. 
             last_improvement = 0
-            stop = False 
+            stop = False
             step = 0
 
             sess.run([tf.compat.v1.global_variables_initializer(), \
@@ -99,7 +116,7 @@ def train(trainer):
                         step += 1
                         if step % 50 == 0: 
                             mean_metrics = mean_over_dict(metrics)
-                            writer.write(mean_metrics, i)
+                            writer.write(mean_metrics, step)
                             metrics = init_metrics()
                         
                         if TRIAL_RUN: break 
@@ -245,7 +262,6 @@ trainers += new_trainers
 configs += new_configs
 
 # if TRIAL_RUN:
-
 trainers = [Baseline]
 configs = [config]
 

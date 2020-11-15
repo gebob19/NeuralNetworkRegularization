@@ -120,17 +120,17 @@ class Baseline():
         self.test_handle = self.test_iterator.string_handle()
 
         self.handle_flag = tf.compat.v1.placeholder(tf.string, [], name='iterator_handle_flag')
-        dataset_iterator = tf.compat.v1.data.Iterator.from_string_handle(self.handle_flag, 
+        self.dataset_iterator = tf.compat.v1.data.Iterator.from_string_handle(self.handle_flag, 
             tf.compat.v1.data.get_output_types(train_dataset), 
             tf.compat.v1.data.get_output_shapes(train_dataset))
 
-        return dataset_iterator
+        return self.dataset_iterator
     
     def build_graph(self):
-        dataset_iterator = self.build_datapipeline()
+        self.build_datapipeline()
 
         # model evaluation 
-        xb, yb = dataset_iterator.get_next()
+        xb, yb = self.dataset_iterator.get_next()
         xb.set_shape([None, 10, IMAGE_SIZE_H, IMAGE_SIZE_W, 3])
 
         logits = self.model(xb)

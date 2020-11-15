@@ -9,7 +9,6 @@ from config import *
 from tqdm import tqdm 
 
 print(tf.__version__)
-N_GPUS = len(tf.config.experimental.list_physical_devices('GPU'))
 print("Num GPUs Available: ", N_GPUS)
 
 #%%
@@ -157,7 +156,7 @@ def train(trainer):
     return trainer 
 
 #%%
-TRIAL_RUN = True
+TRIAL_RUN = False
 writer = NeptuneWriter('gebob19/672-asl')
 
 EPOCHS = 100 if not TRIAL_RUN else 1

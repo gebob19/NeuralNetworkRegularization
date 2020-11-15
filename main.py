@@ -156,7 +156,7 @@ def train(trainer):
     return trainer 
 
 #%%
-TRIAL_RUN = False
+TRIAL_RUN = True
 writer = NeptuneWriter('gebob19/672-asl')
 
 EPOCHS = 100 if not TRIAL_RUN else 1
@@ -264,3 +264,32 @@ print('Complete!')
 # model(x).shape
 
 # %%
+def py_line2example(line, n_frames):
+    d = line.numpy().decode("utf-8").split(' ')
+    fn, label = '{}{}'.format(PATH2VIDEOS, d[0]), int(d[1])
+    vid = mp4_2_numpy(fn)
+    t, h, w, _ = vid.shape 
+    
+    # sample 10 random frames  -- fps == 24 
+    sampled_frame_idxs = np.linspace(0, t-1, num=n_frames, dtype=np.int32)
+    vid = vid[sampled_frame_idxs]
+
+    if h < IMAGE_SIZE_H or w < IMAGE_SIZE_W: 
+        vid = np.stack([cv2.resize(frame, (IMAGE_SIZE_W, IMAGE_SIZE_H)) for frame in vid])
+    else: 
+        # crop to IMAGE_SIZE x IMAGE_SIZE
+        h_start = (h - IMAGE_SIZE_H) // 2
+        w_start = (w - IMAGE_SIZE_W) // 2
+        vid = vid[:, h_start: h_start + IMAGE_SIZE_H, w_start: w_start + IMAGE_SIZE_W, :]
+    
+    # squeeze
+    if len(vid) == 1: 
+        vid = vid[0]
+    # vid = vid.transpose((-1, 1, 2, 0))
+    vid = vid / 255. * 2 - 1
+
+    # one-hot encode label 
+    oh = np.zeros((NUM_CLASSES,))
+    oh[label] = 1 
+
+    return vid, oh

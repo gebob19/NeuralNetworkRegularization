@@ -9,7 +9,6 @@ from config import *
 from tqdm import tqdm 
 
 print(tf.__version__)
-N_GPUS = len(tf.config.experimental.list_physical_devices('GPU'))
 print("Num GPUs Available: ", N_GPUS)
 
 #%%

@@ -11,14 +11,14 @@ def mp4_2_numpy(filename):
     data = np.stack(list(vid.iter_data()))
     return data 
 
-def py_line2example(line):
+def py_line2example(line, n_frames):
     d = line.numpy().decode("utf-8").split(' ')
     fn, label = '{}{}'.format(PATH2VIDEOS, d[0]), int(d[1])
     vid = mp4_2_numpy(fn)
     t, h, w, _ = vid.shape 
     
     # sample 10 random frames  -- fps == 24 
-    sampled_frame_idxs = np.linspace(0, t-1, num=10, dtype=np.int32)
+    sampled_frame_idxs = np.linspace(0, t-1, num=n_frames, dtype=np.int32)
     vid = vid[sampled_frame_idxs]
 
     if h < IMAGE_SIZE_H or w < IMAGE_SIZE_W: 
@@ -29,6 +29,9 @@ def py_line2example(line):
         w_start = (w - IMAGE_SIZE_W) // 2
         vid = vid[:, h_start: h_start + IMAGE_SIZE_H, w_start: w_start + IMAGE_SIZE_W, :]
     
+    # squeeze
+    if len(vid) == 1: 
+        vid = vid[0]
     # vid = vid.transpose((-1, 1, 2, 0))
     vid = vid / 255. * 2 - 1
 
@@ -38,8 +41,8 @@ def py_line2example(line):
 
     return vid, oh
     
-def line2example(x):
-    image, label = tf.py_function(py_line2example, [x], [tf.float32, tf.int32])
+def line2example(x, n_frames=10):
+    image, label = tf.py_function(py_line2example, [x, n_frames], [tf.float32, tf.int32])
     return image, label
 
 
@@ -145,6 +148,82 @@ class Baseline():
         self.acc_initializer = tf.compat.v1.variables_initializer(var_list=self.acc_vars)
 
         self.train_op = self.optimizer.minimize(self.loss)
+
+class Baseline2D(Baseline):
+    def __init__(self, config):
+        # simple resnet model 
+        self.model2d = tf.keras.applications.ResNet50(include_top=False, weights=None)
+        self.flatten = tf.keras.layers.Flatten()
+        self.dense1 = tf.keras.layers.Dense(config['NUM_CLASSES'], activation='softmax')
+        super().__init__(config)
+
+    def model(self, x):
+        x = self.model2d(x)
+        x = self.flatten(x)
+        x = self.dense1(x)
+        return x 
+    
+    def build_datapipeline(self):
+        # 2d image data -- will auto flatten to (H, W, C)
+        l2e = lambda x: line2example(x, n_frames=1)
+
+        train_dataset = tf.data.TextLineDataset([DATAFILE_PATH+'train.txt'])\
+            .map(l2e)\
+            .cache()\
+            .shuffle(BATCH_SIZE, reshuffle_each_iteration=True)\
+            .prefetch(PREFETCH_BUFFER)\
+            .batch(BATCH_SIZE)
+
+        val_dataset = tf.data.TextLineDataset([DATAFILE_PATH+'val.txt'])\
+            .map(l2e)\
+            .prefetch(PREFETCH_BUFFER)\
+            .batch(BATCH_SIZE)
+        
+        test_dataset = tf.data.TextLineDataset([DATAFILE_PATH+'test.txt'])\
+            .map(l2e)\
+            .prefetch(PREFETCH_BUFFER)\
+            .batch(BATCH_SIZE)
+
+        self.train_iterator = tf.compat.v1.data.make_initializable_iterator(train_dataset)
+        self.train_handle = self.train_iterator.string_handle()
+
+        self.val_iterator = tf.compat.v1.data.make_initializable_iterator(val_dataset)
+        self.val_handle = self.val_iterator.string_handle()
+
+        self.test_iterator = tf.compat.v1.data.make_initializable_iterator(test_dataset)
+        self.test_handle = self.test_iterator.string_handle()
+
+        self.handle_flag = tf.compat.v1.placeholder(tf.string, [], name='iterator_handle_flag')
+        dataset_iterator = tf.compat.v1.data.Iterator.from_string_handle(self.handle_flag, 
+            tf.compat.v1.data.get_output_types(train_dataset), 
+            tf.compat.v1.data.get_output_shapes(train_dataset))
+
+        return dataset_iterator
+    
+    def build_graph(self):
+        dataset_iterator = self.build_datapipeline()
+
+        # model evaluation 
+        xb, yb = dataset_iterator.get_next()
+        xb.set_shape([None, IMAGE_SIZE_H, IMAGE_SIZE_W, 3])
+
+        logits = self.model(xb)
+        self.loss = self.loss_func(yb, logits)
+
+        # add layer losses (L1, L2, etc.)
+        if self.layer_regularization: 
+            for layer in self.layers: 
+                self.loss += tf.math.reduce_sum(layer.losses)
+
+        self.grads = tf.gradients(self.loss, tf.compat.v1.trainable_variables())
+
+        self.acc, self.acc_op = tf.compat.v1.metrics.accuracy(tf.argmax(yb, 1), tf.argmax(logits, 1), name='acc')
+        self.acc_vars = tf.compat.v1.get_collection(tf.compat.v1.GraphKeys.LOCAL_VARIABLES, scope="acc")
+        self.acc_initializer = tf.compat.v1.variables_initializer(var_list=self.acc_vars)
+
+        self.train_op = self.optimizer.minimize(self.loss)
+        
+
 
 class Dropout(Baseline):
     def __init__(self, config):

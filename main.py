@@ -9,7 +9,8 @@ from config import *
 from tqdm import tqdm 
 
 print(tf.__version__)
-print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
+N_GPUS = len(tf.config.experimental.list_physical_devices('GPU'))
+print("Num GPUs Available: ", N_GPUS)
 
 #%%
 def mean_over_dict(custom_metrics):
@@ -30,7 +31,28 @@ def inf():
         i += 1 
 
 def train(trainer):
-    with tf.compat.v1.Session() as sess:
+    multi_gpu = True if N_GPUS > 1 else False
+    if multi_gpu:
+        with tf.device('/cpu:0'):
+            # MULTI-GPU SETUP 
+            loss_tensors, accuracy_tensors = [], []
+
+            tower_grads = []
+            with i in range(N_GPUS):
+                with tf.device('/gpu:{}'.format(i)):
+                    with tf.name_scope('GPU_{}'.format(i)) as scope:
+                        tower_grads.append(trainer.grads)
+                        loss_tensors.append(trainer.loss)
+                        accuracy_tensors.append(trainer.acc)
+
+            grads_and_vars = average_gradients(tower_grads)
+            apply_grads = trainer.optimizer.apply_gradients(grads_and_vars)
+            train_op = tf.group(apply_grads, name='train_op')
+
+            avg_loss = tf.reduce_mean(loss_tensors)
+            avg_acc = tf.reduce_mean(accuracy_tensors)
+
+    with tf.compat.v1.Session(config=tf.compat.v1.ConfigProto(allow_soft_placement=True)) as sess:
         best_sess = sess
         best_score = 0. 
         last_improvement = 0
@@ -54,16 +76,26 @@ def train(trainer):
                 print('Training...')
                 sess.run(trainer.acc_initializer) # reset accuracy metric
                 for _ in tqdm(inf()):
-                    _, loss, _ = sess.run([trainer.train_op, trainer.loss, \
-                                trainer.acc_op], \
-                                feed_dict={trainer.handle_flag: train_handle_value,
-                                trainer.is_training: True})
+
+                    if multi_gpu: 
+                        ## RUN SESS WITH MULTI-GPU VALUES 
+                        _, loss, acc = sess.run([train_op, avg_loss, \
+                                    avg_acc], \
+                                    feed_dict={trainer.handle_flag: train_handle_value,
+                                    trainer.is_training: True})
+                        metrics['train_acc'].append(acc)
+                    else: 
+                        _, loss, _ = sess.run([trainer.train_op, trainer.loss, \
+                                    trainer.acc_op], \
+                                    feed_dict={trainer.handle_flag: train_handle_value,
+                                    trainer.is_training: True})
                     metrics['train_loss'].append(loss)
 
                     step += 1
                     if step % 50 == 0: 
-                        metrics['train_acc'] = [sess.run(trainer.acc)]
-                        sess.run(trainer.acc_initializer) # reset accuracy metric
+                        if not multi_gpu: 
+                            metrics['train_acc'] = [sess.run(trainer.acc)]
+                            sess.run(trainer.acc_initializer) # reset accuracy metric
                         mean_metrics = mean_over_dict(metrics)
                         writer.write(mean_metrics, step)
                         metrics = init_metrics()
@@ -71,7 +103,7 @@ def train(trainer):
                     if TRIAL_RUN: break 
             except tf.errors.OutOfRangeError: pass 
 
-            # validation 
+            # validation -- always single GPU for simplicity 
             try: 
                 sess.run(trainer.acc_initializer) # reset accuracy metric
                 for i in tqdm(inf()):
@@ -105,7 +137,7 @@ def train(trainer):
                 print('Early stopping...')
                 break 
 
-        # test 
+        # test -- also single GPU  
         try: 
             sess = best_sess # restore session with the best score
             sess.run(trainer.acc_initializer) # reset accuracy metric
@@ -125,12 +157,12 @@ def train(trainer):
     return trainer 
 
 #%%
-TRIAL_RUN = False
+TRIAL_RUN = True
 writer = NeptuneWriter('gebob19/672-asl')
 
 EPOCHS = 100 if not TRIAL_RUN else 1
-BATCH_SIZE = BATCH_SIZE if not TRIAL_RUN else 32
-PREFETCH_BUFFER = PREFETCH_BUFFER if not TRIAL_RUN else 32
+BATCH_SIZE = BATCH_SIZE if not TRIAL_RUN else 2
+PREFETCH_BUFFER = PREFETCH_BUFFER if not TRIAL_RUN else 2
 REQUIRED_IMPROVEMENT = 10
 
 config = {
@@ -211,8 +243,7 @@ trainers += new_trainers
 configs += new_configs
 
 # if TRIAL_RUN:
-
-trainers = [Baseline]
+trainers = [Baseline2D]
 configs = [config]
 
 for config, trainer_class in zip(configs, trainers): 
@@ -227,3 +258,10 @@ for config, trainer_class in zip(configs, trainers):
     writer.fin()
 
 print('Complete!')
+
+# #%%
+# x = np.random.randn(8, 224, 224, 3).astype(np.float32)
+# model = tf.keras.applications.ResNet50(include_top=False, weights=None)
+# model(x).shape
+
+# %%

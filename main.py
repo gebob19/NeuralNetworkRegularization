@@ -3,6 +3,7 @@ import tensorflow as tf
 import numpy as np
 import imageio
 import cv2 
+import random 
 from writers import NeptuneWriter
 from models import * 
 from config import * 
@@ -12,6 +13,13 @@ print(tf.__version__)
 print("Num GPUs Available: ", N_GPUS)
 
 #%%
+def shuffle_and_overwrite(file_name):
+    content = open(file_name, 'r').readlines()
+    random.shuffle(content)
+    with open(file_name, 'w') as f:
+        for line in content:
+            f.write(line)
+
 def mean_over_dict(custom_metrics):
     mean_metrics = {}
     for k in custom_metrics.keys(): 
@@ -66,6 +74,9 @@ def train(trainer):
 
         for e in range(EPOCHS):
             metrics = init_metrics()
+            
+            # shuffle manually since tf.shuffle is slow 
+            shuffle_and_overwrite(DATAFILE_PATH+'train.txt')
 
             sess.run([trainer.train_iterator.initializer, \
                 trainer.val_iterator.initializer, trainer.test_iterator.initializer])

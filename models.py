@@ -95,10 +95,10 @@ class Baseline():
     def build_datapipeline(self):
         train_dataset = tf.data.TextLineDataset([DATAFILE_PATH+'train.txt'])\
             .map(line2example, num_parallel_calls=8)\
-            .shuffle(BATCH_SIZE, reshuffle_each_iteration=True)\
             .prefetch(PREFETCH_BUFFER)\
             .batch(BATCH_SIZE)\
             .cache()\
+            # .shuffle(BATCH_SIZE, reshuffle_each_iteration=True)\
 
         val_dataset = tf.data.TextLineDataset([DATAFILE_PATH+'val.txt'])\
             .map(line2example, num_parallel_calls=8)\
@@ -169,20 +169,21 @@ class Baseline2D(Baseline):
 
         train_dataset = tf.data.TextLineDataset([DATAFILE_PATH+'train.txt'])\
             .map(l2e, num_parallel_calls=8)\
-            .shuffle(BATCH_SIZE, reshuffle_each_iteration=True)\
             .prefetch(PREFETCH_BUFFER)\
             .batch(BATCH_SIZE)\
-            .cache()\
+            .cache()
 
         val_dataset = tf.data.TextLineDataset([DATAFILE_PATH+'val.txt'])\
             .map(l2e, num_parallel_calls=8)\
             .prefetch(PREFETCH_BUFFER)\
-            .batch(BATCH_SIZE)
+            .batch(BATCH_SIZE)\
+            .cache()
         
         test_dataset = tf.data.TextLineDataset([DATAFILE_PATH+'test.txt'])\
             .map(l2e, num_parallel_calls=8)\
             .prefetch(PREFETCH_BUFFER)\
-            .batch(BATCH_SIZE)
+            .batch(BATCH_SIZE)\
+            .cache()
 
         self.train_iterator = tf.compat.v1.data.make_initializable_iterator(train_dataset)
         self.train_handle = self.train_iterator.string_handle()
@@ -222,7 +223,6 @@ class Baseline2D(Baseline):
         self.acc_initializer = tf.compat.v1.variables_initializer(var_list=self.acc_vars)
 
         self.train_op = self.optimizer.minimize(self.loss)
-        
 
 
 class Dropout(Baseline):

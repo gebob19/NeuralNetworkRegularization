@@ -61,7 +61,6 @@ def train(trainer):
             # MULTI-GPU SETUP 
             loss_tensors, accuracy_tensors = [], []
 
-            # get data input 
             xb, yb, _, _ = trainer.dataset_iterator.get_next()
             xb.set_shape([None, 10, IMAGE_SIZE_H, IMAGE_SIZE_W, 3])
 
@@ -94,6 +93,7 @@ def train(trainer):
     else: 
         print('Not using Multi-GPU setup...')
 
+    # softplacement for multi-gpus 
     with tf.compat.v1.Session(config=tf.compat.v1.ConfigProto(allow_soft_placement=True)) as sess:
         best_sess = sess
         best_score = 0. 

@@ -40,6 +40,7 @@ def inf():
 def train(trainer):
     multi_gpu = True if N_GPUS > 1 else False
     if multi_gpu:
+        print('Using Multi-GPU setup...')
         with tf.device('/cpu:0'):
             # MULTI-GPU SETUP 
             loss_tensors, accuracy_tensors = [], []
@@ -58,6 +59,8 @@ def train(trainer):
 
             avg_loss = tf.reduce_mean(loss_tensors)
             avg_acc = tf.reduce_mean(accuracy_tensors)
+    else: 
+        print('Not using Multi-GPU setup...')
 
     with tf.compat.v1.Session(config=tf.compat.v1.ConfigProto(allow_soft_placement=True)) as sess:
         best_sess = sess
@@ -75,9 +78,6 @@ def train(trainer):
         for e in range(EPOCHS):
             metrics = init_metrics()
             
-            # shuffle manually since tf.shuffle is slow 
-            shuffle_and_overwrite(DATAFILE_PATH+'train.txt')
-
             sess.run([trainer.train_iterator.initializer, \
                 trainer.val_iterator.initializer, trainer.test_iterator.initializer])
 
@@ -253,7 +253,7 @@ trainers += new_trainers
 configs += new_configs
 
 # if TRIAL_RUN:
-trainers = [Baseline2D]
+trainers = [Baseline]
 configs = [config]
 
 for config, trainer_class in zip(configs, trainers): 
@@ -268,39 +268,3 @@ for config, trainer_class in zip(configs, trainers):
     writer.fin()
 
 print('Complete!')
-
-# #%%
-# x = np.random.randn(8, 224, 224, 3).astype(np.float32)
-# model = tf.keras.applications.ResNet50(include_top=False, weights=None)
-# model(x).shape
-
-# %%
-def py_line2example(line, n_frames):
-    d = line.numpy().decode("utf-8").split(' ')
-    fn, label = '{}{}'.format(PATH2VIDEOS, d[0]), int(d[1])
-    vid = mp4_2_numpy(fn)
-    t, h, w, _ = vid.shape 
-    
-    # sample 10 random frames  -- fps == 24 
-    sampled_frame_idxs = np.linspace(0, t-1, num=n_frames, dtype=np.int32)
-    vid = vid[sampled_frame_idxs]
-
-    if h < IMAGE_SIZE_H or w < IMAGE_SIZE_W: 
-        vid = np.stack([cv2.resize(frame, (IMAGE_SIZE_W, IMAGE_SIZE_H)) for frame in vid])
-    else: 
-        # crop to IMAGE_SIZE x IMAGE_SIZE
-        h_start = (h - IMAGE_SIZE_H) // 2
-        w_start = (w - IMAGE_SIZE_W) // 2
-        vid = vid[:, h_start: h_start + IMAGE_SIZE_H, w_start: w_start + IMAGE_SIZE_W, :]
-    
-    # squeeze
-    if len(vid) == 1: 
-        vid = vid[0]
-    # vid = vid.transpose((-1, 1, 2, 0))
-    vid = vid / 255. * 2 - 1
-
-    # one-hot encode label 
-    oh = np.zeros((NUM_CLASSES,))
-    oh[label] = 1 
-
-    return vid, oh

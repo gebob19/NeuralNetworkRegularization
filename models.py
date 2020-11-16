@@ -46,6 +46,63 @@ def line2example(x, n_frames=10):
     image, label = tf.py_function(py_line2example, [x, n_frames], [tf.float32, tf.int32])
     return image, label
 
+######### TF Record helpers 
+
+sequence_features = {
+    'data': tf.FixedLenSequenceFeature([], dtype=tf.string)
+}
+
+context_features = {
+    'filename': tf.io.FixedLenFeature([], tf.string),
+    'height': tf.io.FixedLenFeature([], tf.int64),
+    'width': tf.io.FixedLenFeature([], tf.int64),
+    'depth': tf.io.FixedLenFeature([], tf.int64),
+    'temporal': tf.io.FixedLenFeature([], tf.int64),
+    'label': tf.io.FixedLenFeature([], tf.int64),
+}
+
+@tf.function
+def resize(x):
+    return tf.image.resize(x, [IMAGE_SIZE_H, IMAGE_SIZE_W])
+
+def _parse_image_function(example_proto):
+    # Parse the input tf.train.Example proto using the dictionary above.
+    context, sequence = tf.parse_single_sequence_example(
+            example_proto, context_features=context_features, sequence_features=sequence_features)
+    
+    shape = (context['temporal'], context['height'], context['width'], context['depth'])
+
+    # literally had to brute force this shit to get it working 
+    video_data = tf.expand_dims(
+        tf.image.decode_image(tf.gather(sequence['data'], [0])[0]), 0)
+    i = tf.constant(1, dtype=tf.int32)
+    cond = lambda i, _: tf.less(i, tf.cast(context['temporal'], tf.int32))
+    def body(i, video_data):
+        video3D = tf.gather(sequence['data'], [i])
+        img_data = tf.image.decode_image(video3D[0]) 
+        video_data = tf.concat([video_data, [img_data]], 0)
+        return (tf.add(i, 1), video_data)
+
+    _, video_data = tf.while_loop(cond, body, [i, video_data], 
+        shape_invariants=[i.get_shape(), tf.TensorShape([None])])
+    # use this to set the shape -- doesn't change anything 
+    video3D = video_data
+    video3D = tf.reshape(video3D, shape)
+    video3D = tf.cast(video3D, tf.float32)
+
+    # # sample across temporal frames 
+    # idxs = tf.random.uniform((N_FRAMES,), minval=0,
+    #         maxval=tf.cast(context['temporal'], tf.int32), 
+    #         dtype=tf.int32)
+    # video3D = tf.cast(tf.gather(video3D, idxs), tf.float32)
+
+    # resize images in video
+    video3D = tf.map_fn(resize, video3D, back_prop=False, parallel_iterations=10)
+
+    label = context['label']
+
+    return video3D, label, context['filename'], shape
+
 
 ####### trainer classes 
 
@@ -94,20 +151,18 @@ class Baseline():
         return x 
 
     def build_datapipeline(self):
-        train_dataset = tf.data.TextLineDataset([DATAFILE_PATH+'train.txt'])\
-            .map(line2example, num_parallel_calls=8)\
+        train_dataset = tf.data.TFRecordDataset(DATAFILE_PATH+'train.tfrecord')\
+            .map(_parse_image_function)\
             .prefetch(PREFETCH_BUFFER)\
-            .batch(BATCH_SIZE)\
-            .cache()\
-            # .shuffle(BATCH_SIZE, reshuffle_each_iteration=True)\
+            .batch(BATCH_SIZE)
 
-        val_dataset = tf.data.TextLineDataset([DATAFILE_PATH+'val.txt'])\
-            .map(line2example, num_parallel_calls=8)\
+        val_dataset = tf.data.TFRecordDataset(DATAFILE_PATH+'val.tfrecord')\
+            .map(_parse_image_function)\
             .prefetch(PREFETCH_BUFFER)\
             .batch(BATCH_SIZE)
         
-        test_dataset = tf.data.TextLineDataset([DATAFILE_PATH+'test.txt'])\
-            .map(line2example, num_parallel_calls=8)\
+        test_dataset = tf.data.TFRecordDataset(DATAFILE_PATH+'val.tfrecord')\
+            .map(_parse_image_function)\
             .prefetch(PREFETCH_BUFFER)\
             .batch(BATCH_SIZE)
 
@@ -131,7 +186,7 @@ class Baseline():
         self.build_datapipeline()
 
         # model evaluation 
-        xb, yb = self.dataset_iterator.get_next()
+        xb, yb, _, _ = self.dataset_iterator.get_next()
         xb.set_shape([None, 10, IMAGE_SIZE_H, IMAGE_SIZE_W, 3])
 
         logits = self.model(xb)
@@ -166,25 +221,23 @@ class Baseline2D(Baseline):
     
     def build_datapipeline(self):
         # 2d image data -- will auto flatten to (H, W, C)
-        l2e = lambda x: line2example(x, n_frames=1)
+        # l2e = lambda x: line2example(x, n_frames=1)
+        # def single_frame
 
-        train_dataset = tf.data.TextLineDataset([DATAFILE_PATH+'train.txt'])\
-            .map(l2e, num_parallel_calls=8)\
+        train_dataset = tf.data.TFRecordDataset(DATAFILE_PATH+'train.tfrecord')\
+            .map(_parse_image_function)\
             .prefetch(PREFETCH_BUFFER)\
-            .batch(BATCH_SIZE)\
-            .cache()
+            .batch(BATCH_SIZE)
 
-        val_dataset = tf.data.TextLineDataset([DATAFILE_PATH+'val.txt'])\
-            .map(l2e, num_parallel_calls=8)\
+        val_dataset = tf.data.TFRecordDataset(DATAFILE_PATH+'val.tfrecord')\
+            .map(_parse_image_function)\
             .prefetch(PREFETCH_BUFFER)\
-            .batch(BATCH_SIZE)\
-            .cache()
+            .batch(BATCH_SIZE)
         
-        test_dataset = tf.data.TextLineDataset([DATAFILE_PATH+'test.txt'])\
-            .map(l2e, num_parallel_calls=8)\
+        test_dataset = tf.data.TFRecordDataset(DATAFILE_PATH+'val.tfrecord')\
+            .map(_parse_image_function)\
             .prefetch(PREFETCH_BUFFER)\
-            .batch(BATCH_SIZE)\
-            .cache()
+            .batch(BATCH_SIZE)
 
         self.train_iterator = tf.compat.v1.data.make_initializable_iterator(train_dataset)
         self.train_handle = self.train_iterator.string_handle()

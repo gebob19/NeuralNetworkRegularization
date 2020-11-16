@@ -12,10 +12,10 @@ DESKTOP = True if N_GPUS == 1 else False
 
 if VIP: 
     PATH2VIDEOS = '/home/brennan/672/videos/'
-    DATAFILE_PATH = '/home/brennan/672/regularization_project/top-k-glosses/{}/'.format(TOP_N)
+    DATAFILE_PATH = '/home/brennan/672/regularization_project/data/top-{}/'.format(TOP_N)
 elif DESKTOP: 
     PATH2VIDEOS = '/home/brennan/Documents/gradschool/672/videos/'
-    DATAFILE_PATH = '/home/brennan/Documents/gradschool/672/regularization_project/top-k-glosses/{}/'.format(TOP_N)
+    DATAFILE_PATH = '/home/brennan/Documents/gradschool/672/regularization_project/data/top-{}/'.format(TOP_N)
 else: 
     PATH2VIDEOS = '/Users/brennangebotys/Documents/gradschool/672/project/data/WLASL/start_kit/videos/'
-    DATAFILE_PATH = '/Users/brennangebotys/Documents/gradschool/672/project/regularization_project/top-k-glosses/{}/'.format(TOP_N)
+    DATAFILE_PATH = '/Users/brennangebotys/Documents/gradschool/672/project/regularization_project/data/top-{}/'.format(TOP_N)

@@ -32,6 +32,7 @@ def py_line2example(line, n_frames):
     # squeeze
     if len(vid) == 1: 
         vid = vid[0]
+    # T, H, W, C
     # vid = vid.transpose((-1, 1, 2, 0))
     vid = vid / 255. * 2 - 1
 

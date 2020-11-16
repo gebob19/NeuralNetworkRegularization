@@ -47,10 +47,11 @@ def line2example(line):
     
     # read file for shape 
     data = mp4_2_numpy(fn)
-    t, h, w, c = data.shape
     # sample 10 random frames  -- fps == 24 
+    t, h, w, c = data.shape
     sampled_frame_idxs = np.linspace(0, t-1, num=N_FRAMES, dtype=np.int32)
     data = data[sampled_frame_idxs]
+    t, h, w, c = data.shape
 
     # save video as list of encoded frames 
     img_bytes = [tf.image.encode_jpeg(d, format='rgb') for d in data]
@@ -89,14 +90,9 @@ def create_tfrecords():
 
         record_file = str(RECORDS_SAVE_PATH/'{}.tfrecord'.format(dset_name[:-4]))
         with tf.python_io.TFRecordWriter(record_file) as writer: 
-            for line in tqdm(lines[:2]): 
+            for line in tqdm(lines[:3]): 
                 example = line2example(line)
                 writer.write(example.SerializeToString())
-
-if __name__ == "__main__":
-    create_tfrecords()     
-
-
 
 #%%
 ################ READING THE DATA EXAMPLE ####################
@@ -138,9 +134,10 @@ def test():
 
         _, video_data = tf.while_loop(cond, body, [i, video_data], 
             shape_invariants=[i.get_shape(), tf.TensorShape([None])])
-        video3D = video_data
         # use this to set the shape -- doesn't change anything 
+        video3D = video_data
         video3D = tf.reshape(video3D, shape)
+        video3D = tf.cast(video3D, tf.float32)
 
         # # sample across temporal frames 
         # idxs = tf.random.uniform((N_FRAMES,), minval=0,
@@ -155,7 +152,7 @@ def test():
 
         return video3D, label, context['filename'], shape
 
-    dataset = tf.data.TFRecordDataset('data/example2.tfrecord')\
+    dataset = tf.data.TFRecordDataset('data/top-100/train.tfrecord')\
         .map(_parse_image_function)\
         .batch(2)
 
@@ -169,3 +166,8 @@ def test():
         for _ in range(1):
             vid, _, _, shape = sess.run(next_element)
             print(vid.shape)
+
+if __name__ == "__main__":
+    create_tfrecords()     
+    test()
+

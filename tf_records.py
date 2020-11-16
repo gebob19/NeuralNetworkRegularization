@@ -88,7 +88,7 @@ def create_tfrecords():
 
         record_file = str(RECORDS_SAVE_PATH/'{}.tfrecord'.format(dset_name[:-4]))
         with tf.python_io.TFRecordWriter(record_file) as writer: 
-            for line in tqdm(lines[:3]): 
+            for line in tqdm(lines): 
                 example = line2example(line)
                 writer.write(example.SerializeToString())
 
@@ -166,6 +166,6 @@ def test():
             print(vid.shape)
 
 if __name__ == "__main__":
-    create_tfrecords()     
+    # create_tfrecords()     
     test()
 

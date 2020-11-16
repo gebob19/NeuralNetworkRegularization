@@ -79,90 +79,93 @@ def line2example(line):
     return example
 
 #%%    
-RECORDS_SAVE_PATH = pathlib.Path('data/top-{}/'.format(TOP_N))
-RECORDS_SAVE_PATH.mkdir(exist_ok=True, parents=True)
+def create_tfrecords():
+    RECORDS_SAVE_PATH = pathlib.Path('data/top-{}/'.format(TOP_N))
+    RECORDS_SAVE_PATH.mkdir(exist_ok=True, parents=True)
 
-for dset_name in ['train.txt', 'test.txt', 'val.txt']:
-    with open(DATAFILE_PATH + dset_name, 'r') as f:
-        lines = f.readlines()
+    for dset_name in ['train.txt', 'test.txt', 'val.txt']:
+        with open(DATAFILE_PATH + dset_name, 'r') as f:
+            lines = f.readlines()
 
-    record_file = str(RECORDS_SAVE_PATH/'{}.tfrecord'.format(dset_name[:-4]))
-    with tf.python_io.TFRecordWriter(record_file) as writer: 
-        for line in tqdm(lines[:2]): 
-            example = line2example(line)
-            writer.write(example.SerializeToString())
+        record_file = str(RECORDS_SAVE_PATH/'{}.tfrecord'.format(dset_name[:-4]))
+        with tf.python_io.TFRecordWriter(record_file) as writer: 
+            for line in tqdm(lines[:2]): 
+                example = line2example(line)
+                writer.write(example.SerializeToString())
+
+if __name__ == "__main__":
+    create_tfrecords()     
+
+
 
 #%%
 ################ READING THE DATA EXAMPLE ####################
+def test():
+    sequence_features = {
+        'data': tf.FixedLenSequenceFeature([], dtype=tf.string)
+    }
 
-sequence_features = {
-    'data': tf.FixedLenSequenceFeature([], dtype=tf.string)
-}
+    context_features = {
+        'filename': tf.io.FixedLenFeature([], tf.string),
+        'height': tf.io.FixedLenFeature([], tf.int64),
+        'width': tf.io.FixedLenFeature([], tf.int64),
+        'depth': tf.io.FixedLenFeature([], tf.int64),
+        'temporal': tf.io.FixedLenFeature([], tf.int64),
+        'label': tf.io.FixedLenFeature([], tf.int64),
+    }
 
-context_features = {
-    'filename': tf.io.FixedLenFeature([], tf.string),
-    'height': tf.io.FixedLenFeature([], tf.int64),
-    'width': tf.io.FixedLenFeature([], tf.int64),
-    'depth': tf.io.FixedLenFeature([], tf.int64),
-    'temporal': tf.io.FixedLenFeature([], tf.int64),
-    'label': tf.io.FixedLenFeature([], tf.int64),
-}
+    @tf.function
+    def resize(x):
+        return tf.image.resize(x, [IMAGE_SIZE_H, IMAGE_SIZE_W])
 
-@tf.function
-def resize(x):
-    return tf.image.resize(x, [IMAGE_SIZE_H, IMAGE_SIZE_W])
+    def _parse_image_function(example_proto):
+        # Parse the input tf.train.Example proto using the dictionary above.
+        context, sequence = tf.parse_single_sequence_example(
+                example_proto, context_features=context_features, sequence_features=sequence_features)
+        
+        shape = (context['temporal'], context['height'], context['width'], context['depth'])
 
-def _parse_image_function(example_proto):
-    # Parse the input tf.train.Example proto using the dictionary above.
-    context, sequence = tf.parse_single_sequence_example(
-            example_proto, context_features=context_features, sequence_features=sequence_features)
-    
-    shape = (context['temporal'], context['height'], context['width'], context['depth'])
+        # literally had to brute force this shit to get it working 
+        video_data = tf.expand_dims(
+            tf.image.decode_image(tf.gather(sequence['data'], [0])[0]), 0)
+        i = tf.constant(1, dtype=tf.int32)
+        cond = lambda i, _: tf.less(i, tf.cast(context['temporal'], tf.int32))
+        def body(i, video_data):
+            video3D = tf.gather(sequence['data'], [i])
+            img_data = tf.image.decode_image(video3D[0]) 
+            video_data = tf.concat([video_data, [img_data]], 0)
+            return (tf.add(i, 1), video_data)
 
-    # literally had to brute force this shit to get it working 
-    video_data = tf.expand_dims(
-        tf.image.decode_image(tf.gather(sequence['data'], [0])[0]), 0)
-    i = tf.constant(1, dtype=tf.int32)
-    cond = lambda i, _: tf.less(i, tf.cast(context['temporal'], tf.int32))
-    def body(i, video_data):
-        video3D = tf.gather(sequence['data'], [i])
-        img_data = tf.image.decode_image(video3D[0]) 
-        video_data = tf.concat([video_data, [img_data]], 0)
-        return (tf.add(i, 1), video_data)
+        _, video_data = tf.while_loop(cond, body, [i, video_data], 
+            shape_invariants=[i.get_shape(), tf.TensorShape([None])])
+        video3D = video_data
+        # use this to set the shape -- doesn't change anything 
+        video3D = tf.reshape(video3D, shape)
 
-    _, video_data = tf.while_loop(cond, body, [i, video_data], 
-        shape_invariants=[i.get_shape(), tf.TensorShape([None])])
-    video3D = video_data
-    # use this to set the shape -- doesn't change anything 
-    video3D = tf.reshape(video3D, shape)
+        # # sample across temporal frames 
+        # idxs = tf.random.uniform((N_FRAMES,), minval=0,
+        #         maxval=tf.cast(context['temporal'], tf.int32), 
+        #         dtype=tf.int32)
+        # video3D = tf.cast(tf.gather(video3D, idxs), tf.float32)
 
-    # # sample across temporal frames 
-    # idxs = tf.random.uniform((N_FRAMES,), minval=0,
-    #         maxval=tf.cast(context['temporal'], tf.int32), 
-    #         dtype=tf.int32)
-    # video3D = tf.cast(tf.gather(video3D, idxs), tf.float32)
+        # resize images in video
+        video3D = tf.map_fn(resize, video3D, back_prop=False, parallel_iterations=10)
 
-    # resize images in video
-    video3D = tf.map_fn(resize, video3D, back_prop=False, parallel_iterations=10)
+        label = context['label']
 
-    label = context['label']
+        return video3D, label, context['filename'], shape
 
-    return video3D, label, context['filename'], shape
+    dataset = tf.data.TFRecordDataset('data/example2.tfrecord')\
+        .map(_parse_image_function)\
+        .batch(2)
 
-dataset = tf.data.TFRecordDataset('data/example2.tfrecord')\
-    .map(_parse_image_function)\
-    .batch(2)
+    iterator = dataset.make_one_shot_iterator()
+    next_element = iterator.get_next()
 
-iterator = dataset.make_one_shot_iterator()
-next_element = iterator.get_next()
-
-# %%
-with tf.Session() as sess: 
-    sess.run([tf.compat.v1.global_variables_initializer(), \
-            tf.compat.v1.local_variables_initializer()])
-    for _ in range(1):
-        vid, _, _, shape = sess.run(next_element)
-        print(vid.shape)
-
-
-# %%
+    # %%
+    with tf.Session() as sess: 
+        sess.run([tf.compat.v1.global_variables_initializer(), \
+                tf.compat.v1.local_variables_initializer()])
+        for _ in range(1):
+            vid, _, _, shape = sess.run(next_element)
+            print(vid.shape)

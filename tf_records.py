@@ -55,13 +55,11 @@ def line2example(line):
 
     # save video as list of encoded frames 
     img_bytes = [tf.image.encode_jpeg(d, format='rgb') for d in data]
-
     with tf.Session() as sess: 
         img_bytes = sess.run(img_bytes)
     
-    img_feats = [tf.train.Feature(bytes_list=tf.train.BytesList(value=[imgb])) for imgb in img_bytes]
-
     sequence_dict = {}
+    img_feats = [tf.train.Feature(bytes_list=tf.train.BytesList(value=[imgb])) for imgb in img_bytes]
     sequence_dict['data'] = tf.train.FeatureList(feature=img_feats)
 
     context_dict = {}

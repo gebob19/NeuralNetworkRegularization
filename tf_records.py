@@ -88,7 +88,7 @@ def create_tfrecords():
 
         record_file = str(RECORDS_SAVE_PATH/'{}.tfrecord'.format(dset_name[:-4]))
         with tf.python_io.TFRecordWriter(record_file) as writer: 
-            for line in tqdm(lines): 
+            for line in tqdm(lines[:10]): 
                 example = line2example(line)
                 writer.write(example.SerializeToString())
 
@@ -157,7 +157,6 @@ def test():
     iterator = dataset.make_one_shot_iterator()
     next_element = iterator.get_next()
 
-    # %%
     with tf.Session() as sess: 
         sess.run([tf.compat.v1.global_variables_initializer(), \
                 tf.compat.v1.local_variables_initializer()])
@@ -165,7 +164,8 @@ def test():
             vid, _, _, shape = sess.run(next_element)
             print(vid.shape)
 
+#%%
 if __name__ == "__main__":
-    # create_tfrecords()     
+    create_tfrecords()     
     test()
 

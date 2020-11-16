@@ -100,9 +100,9 @@ def _parse_image_function(example_proto):
     video3D = tf.map_fn(resize, video3D, back_prop=False, parallel_iterations=10)
 
     label = context['label']
+    label = tf.one_hot(label, NUM_CLASSES)
 
     return video3D, label, context['filename'], shape
-
 
 ####### trainer classes 
 

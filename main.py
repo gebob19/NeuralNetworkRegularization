@@ -339,3 +339,26 @@ for config, trainer_class in zip(configs, trainers):
     writer.fin()
 
 print('Complete!')
+
+#%%
+x = tf.placeholder(np.float32, [None, 10, 24, 24, 3])
+model = tf.keras.Sequential([
+    tf.keras.layers.Conv2D(64, 3), 
+    tf.keras.layers.Flatten(), 
+    tf.keras.layers.Dense(10),])
+# transpose to (temporal, batch, h, w, c)
+tmp = tf.transpose(x, perm=[1, 0, 2, 3, 4])
+y = tf.map_fn(model, tmp)
+# transpose back (temporal, batch, logits)
+y = tf.transpose(y, perm=[1, 0, 2])
+# avg over predictions
+logits = tf.reduce_mean(y, axis=1)
+
+# %%
+with tf.Session() as sess: 
+    sess.run(tf.global_variables_initializer())
+    logits_out = sess.run(logits, feed_dict={
+        x: np.random.randn(3, 10, 24, 24, 3)
+    })
+    print(logits_out.shape)
+# %%

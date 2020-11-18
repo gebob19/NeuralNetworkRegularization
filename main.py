@@ -80,7 +80,7 @@ def inf():
 
 def train(trainer):
     multi_gpu = True if N_GPUS > 1 else False
-    # multi_gpu = False 
+    multi_gpu = False 
     if multi_gpu:
         print('Using Multi-GPU setup...')
         with tf.device('/cpu:0'):
@@ -90,27 +90,32 @@ def train(trainer):
             def compute_loss_acc(xb, yb):
                 logits = trainer.model(xb)
                 loss = trainer.loss_func(yb, logits)
-                acc, _ = tf.compat.v1.metrics.accuracy(tf.argmax(yb, 1), tf.argmax(logits, 1), name='acc')
-                return loss, acc
+                n_examples = tf.cast(tf.shape(logits)[0], tf.float32)
+                n_correct = tf.reduce_sum(tf.cast(
+                    tf.equal(tf.argmax(yb, 1), tf.argmax(logits, 1)),
+                        tf.float32))
+                return loss, n_examples, n_correct
 
-            xb, yb = trainer.dataset_iterator.get_next()
-            trainer.set_input_shape(xb)
-            
+
             tower_grads = []
+            example_counter, correct_counter = [], []
             dependencies = []
             for i in range(N_GPUS):
                 with tf.device('/gpu:{}'.format(i)):
                     with tf.name_scope('GPU_{}'.format(i)) as scope:
+                        xb, yb = trainer.dataset_iterator.get_next()
+                        trainer.set_input_shape(xb)
 
-                        loss, acc = compute_loss_acc(xb, yb)
-
+                        loss, n_examples, n_correct = compute_loss_acc(xb, yb)
                         grads = trainer.optimizer.compute_gradients(loss)
 
                         tower_grads.append(grads)
                         loss_tensors.append(loss)
-                        accuracy_tensors.append(acc)
 
-                        dependencies.append(loss)
+                        example_counter.append(n_examples)
+                        correct_counter.append(n_correct)
+
+                        dependencies += [loss, n_examples, n_correct]
 
             grads = average_gradients(tower_grads)
             apply_gradient_op = trainer.optimizer.apply_gradients(grads)
@@ -118,9 +123,10 @@ def train(trainer):
             # run a training step on each GPU before applying gradients 
             with tf.control_dependencies(dependencies):
                 train_op = tf.group(apply_gradient_op)
-
-            avg_loss = tf.reduce_mean(loss_tensors)
-            avg_acc = tf.reduce_mean(accuracy_tensors)
+                num_correct = tf.reduce_sum(correct_counter)
+                num_examples = tf.reduce_sum(example_counter)
+                avg_loss = tf.reduce_mean(loss_tensors)
+                
     else: 
         print('Not using Multi-GPU setup...')
 
@@ -147,15 +153,16 @@ def train(trainer):
             try: 
                 print('Training...')
                 sess.run(trainer.acc_initializer) # reset accuracy metric
+                total_correct, total = 0., 0.
                 for _ in tqdm(inf()):
-
                     if multi_gpu: 
                         ## RUN SESS WITH MULTI-GPU VALUES 
-                        _, loss_value, acc_value = sess.run([train_op, avg_loss, \
-                                    avg_acc], \
+                        _, loss_value, n_correct_value, n_examples_value\
+                         = sess.run([train_op, avg_loss, num_correct, num_examples], \
                                     feed_dict={trainer.handle_flag: train_handle_value,
                                     trainer.is_training: True})
-                        metrics['train_acc'].append(acc_value)
+                        total += n_examples_value
+                        total_correct += n_correct_value
                     else: 
                         _, loss_value, _ = sess.run([trainer.train_op, trainer.loss, \
                                     trainer.acc_op], \
@@ -167,18 +174,13 @@ def train(trainer):
                     # watch for nans 
                     assert not np.any(np.isnan(loss_value)), print(logits[0], np.argmax(yb, -1), loss_value)
 
-                    step += 1 
-                    if step % 50 == 0: 
-                        if not multi_gpu: 
-                            metrics['train_acc'] = [sess.run(trainer.acc)]
-                            sess.run(trainer.acc_initializer) # reset accuracy metric
-                        mean_metrics = mean_over_dict(metrics)
-                        writer.write(mean_metrics, step)
-                        metrics = init_metrics()
-                    
                     if TRIAL_RUN: break 
             except tf.errors.OutOfRangeError: pass 
-            metrics['train_acc'] = [sess.run(trainer.acc)]
+            
+            if not multi_gpu: 
+                metrics['train_acc'] = [sess.run(trainer.acc)]
+            else: 
+                metrics['train_acc'] = [total_correct / total]
 
             try: 
                 sess.run(trainer.acc_initializer) # reset accuracy metric
@@ -324,8 +326,8 @@ configs = [config]
 
 for config, trainer_class in zip(configs, trainers): 
     config['experiment_name'] = trainer_class.__name__
-    if not TRIAL_RUN:
-        writer.start(config)
+    # if not TRIAL_RUN:
+    #     writer.start(config)
 
     tf.compat.v1.reset_default_graph()
     trainer = trainer_class(config)
@@ -335,25 +337,3 @@ for config, trainer_class in zip(configs, trainers):
 
 print('Complete!')
 
-#%%
-x = tf.placeholder(np.float32, [None, 10, 24, 24, 3])
-model = tf.keras.Sequential([
-    tf.keras.layers.Conv2D(64, 3), 
-    tf.keras.layers.Flatten(), 
-    tf.keras.layers.Dense(10),])
-# transpose to (temporal, batch, h, w, c)
-tmp = tf.transpose(x, perm=[1, 0, 2, 3, 4])
-y = tf.map_fn(model, tmp)
-# transpose back (temporal, batch, logits)
-y = tf.transpose(y, perm=[1, 0, 2])
-# avg over predictions
-logits = tf.reduce_mean(y, axis=1)
-
-# %%
-with tf.Session() as sess: 
-    sess.run(tf.global_variables_initializer())
-    logits_out = sess.run(logits, feed_dict={
-        x: np.random.randn(3, 10, 24, 24, 3)
-    })
-    print(logits_out.shape)
-# %%

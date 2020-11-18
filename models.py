@@ -101,7 +101,7 @@ def _parse_image_function(example_proto, single_frame=False):
     label = context['label']
     label = tf.one_hot(label, NUM_CLASSES)
 
-    return video_data, label#, context['filename'], shape
+    return video_data, label
 
 ####### trainer classes 
 
@@ -109,8 +109,7 @@ class Baseline():
     def __init__(self, config):
         self.layers = self.get_layers(config)
 
-        # self.optimizer = tf.compat.v1.train.AdamOptimizer(1e-3)
-        self.optimizer = tf.train.GradientDescentOptimizer(1e-2)
+        self.optimizer = tf.compat.v1.train.AdamOptimizer(5e-4)
         self.loss_func = tf.keras.losses.CategoricalCrossentropy(from_logits=True)
         self.is_training = tf.compat.v1.placeholder_with_default(True, shape=())
         self.layer_regularization = self.get_layer_regularization_flag()
@@ -226,39 +225,48 @@ class Baseline2D(Baseline):
 
             tf.keras.layers.Flatten(), 
             tf.keras.layers.Dense(128, activation="relu"), 
-            tf.keras.layers.Dense(config['NUM_CLASSES'], activation='softmax'), 
+            # softmax is applied to the avg of the multiple predictions 
+            tf.keras.layers.Dense(config['NUM_CLASSES']), 
         ]
 
     def set_input_shape(self, xb):
-        xb.set_shape([None, IMAGE_SIZE_H, IMAGE_SIZE_W, 3])
+        xb.set_shape([None, 10, IMAGE_SIZE_H, IMAGE_SIZE_W, 3])
+
+    def model(self, x):
+        # transpose to (temporal, batch, h, w, c)
+
+        x = tf.transpose(x, perm=[1, 0, 2, 3, 4])
+        y = tf.map_fn(super().model, x)
+        # transpose back (batch, temporal, n_classes)
+        y = tf.transpose(y, perm=[1, 0, 2])
+        # average over temporal dimension + softmax (batch, logits)
+        logits = tf.nn.softmax(tf.reduce_mean(y, axis=1))
+        return logits
     
     def build_datapipeline(self):
         @tf.function
-        def tmp(x):
+        def _parse_single_frame(x): 
             return _parse_image_function(x, single_frame=True)
 
         train_dataset = tf.data.TFRecordDataset(DATAFILE_PATH+'train.tfrecord',\
             num_parallel_reads=tf.data.experimental.AUTOTUNE, buffer_size=50)\
-            .map(tmp, num_parallel_calls=tf.data.experimental.AUTOTUNE)\
+            .map(_parse_image_function, num_parallel_calls=tf.data.experimental.AUTOTUNE)\
             .prefetch(PREFETCH_BUFFER)\
             .batch(BATCH_SIZE)\
-            # .map(single_frame, num_parallel_calls=tf.data.experimental.AUTOTUNE)\
             # .cache()
 
         val_dataset = tf.data.TFRecordDataset(DATAFILE_PATH+'val.tfrecord',\
             num_parallel_reads=tf.data.experimental.AUTOTUNE, buffer_size=50)\
-            .map(tmp, num_parallel_calls=tf.data.experimental.AUTOTUNE)\
+            .map(_parse_image_function, num_parallel_calls=tf.data.experimental.AUTOTUNE)\
             .prefetch(PREFETCH_BUFFER)\
             .batch(BATCH_SIZE)\
             # .cache()
-            # .map(single_frame, num_parallel_calls=tf.data.experimental.AUTOTUNE)\
         
         test_dataset = tf.data.TFRecordDataset(DATAFILE_PATH+'val.tfrecord',\
             num_parallel_reads=tf.data.experimental.AUTOTUNE, buffer_size=50)\
-            .map(tmp, num_parallel_calls=tf.data.experimental.AUTOTUNE)\
+            .map(_parse_image_function, num_parallel_calls=tf.data.experimental.AUTOTUNE)\
             .prefetch(PREFETCH_BUFFER)\
             .batch(BATCH_SIZE)\
-            # .map(single_frame, num_parallel_calls=tf.data.experimental.AUTOTUNE)\
             # .cache()
 
         self.train_iterator = tf.compat.v1.data.make_initializable_iterator(train_dataset)
@@ -285,10 +293,10 @@ class Baseline2D(Baseline):
         self.logits = self.model(self.xb)
         self.loss = self.loss_func(self.yb, self.logits)
 
-        # # add layer losses (L1, L2, etc.)
-        # if self.layer_regularization: 
-        #     for layer in self.layers: 
-        #         self.loss += tf.math.reduce_sum(layer.losses)
+        # add layer losses (L1, L2, etc.)
+        if self.layer_regularization: 
+            for layer in self.layers: 
+                self.loss += tf.math.reduce_sum(layer.losses)
 
         self.grads = tf.gradients(self.loss, tf.compat.v1.trainable_variables())
 

@@ -103,16 +103,6 @@ def _parse_image_function(example_proto, single_frame=False):
 
     return video_data, label#, context['filename'], shape
 
-# @tf.function
-# def single_frame(video_data, label, fn, shape):
-#     # sample a single frame across temporal frames 
-#     # idxs = tf.random.uniform((1,), minval=0,
-#     #         maxval=tf.cast(shape[0], tf.int32), 
-#     #         dtype=tf.int32)
-#     video_data = tf.squeeze(tf.gather(video_data, [0]))
-
-#     return video_data, label
-
 ####### trainer classes 
 
 class Baseline():

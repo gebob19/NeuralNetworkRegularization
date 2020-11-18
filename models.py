@@ -90,19 +90,24 @@ def _parse_image_function(example_proto):
     video3D = tf.reshape(video3D, shape)
     video3D = tf.cast(video3D, tf.float32)
 
-    # # sample across temporal frames 
-    # idxs = tf.random.uniform((N_FRAMES,), minval=0,
-    #         maxval=tf.cast(context['temporal'], tf.int32), 
-    #         dtype=tf.int32)
-    # video3D = tf.cast(tf.gather(video3D, idxs), tf.float32)
-
     # resize images in video
     video3D = tf.map_fn(resize, video3D, back_prop=False, parallel_iterations=10)
+    # normalize to [0, 1]
+    video3D = video3D / 255.
 
     label = context['label']
     label = tf.one_hot(label, NUM_CLASSES)
 
     return video3D, label, context['filename'], shape
+
+def single_frame(video3D, label, fn, shape):
+    # sample a single frame across temporal frames 
+    idxs = tf.random.uniform((1,), minval=0,
+            maxval=tf.cast(shape[0], tf.int32), 
+            dtype=tf.int32)
+    video3D = tf.squeeze(tf.gather(video3D, idxs))
+
+    return video3D, label, fn, shape
 
 ####### trainer classes 
 
@@ -150,18 +155,21 @@ class Baseline():
             x = layer(x)
         return x 
 
+    def set_input_shape(self, x):
+        x.set_shape([None, 10, IMAGE_SIZE_H, IMAGE_SIZE_W, 3])
+
     def build_datapipeline(self):
-        train_dataset = tf.data.TFRecordDataset(DATAFILE_PATH+'train.tfrecord')\
+        train_dataset = tf.data.TFRecordDataset(DATAFILE_PATH+'train.tfrecord', num_parallel_reads=3)\
             .map(_parse_image_function)\
             .prefetch(PREFETCH_BUFFER)\
             .batch(BATCH_SIZE)
 
-        val_dataset = tf.data.TFRecordDataset(DATAFILE_PATH+'val.tfrecord')\
+        val_dataset = tf.data.TFRecordDataset(DATAFILE_PATH+'val.tfrecord', num_parallel_reads=3)\
             .map(_parse_image_function)\
             .prefetch(PREFETCH_BUFFER)\
             .batch(BATCH_SIZE)
         
-        test_dataset = tf.data.TFRecordDataset(DATAFILE_PATH+'val.tfrecord')\
+        test_dataset = tf.data.TFRecordDataset(DATAFILE_PATH+'val.tfrecord', num_parallel_reads=3)\
             .map(_parse_image_function)\
             .prefetch(PREFETCH_BUFFER)\
             .batch(BATCH_SIZE)
@@ -187,7 +195,7 @@ class Baseline():
 
         # model evaluation 
         xb, yb, _, _ = self.dataset_iterator.get_next()
-        xb.set_shape([None, 10, IMAGE_SIZE_H, IMAGE_SIZE_W, 3])
+        self.set_input_shape(xb)
 
         logits = self.model(xb)
         self.loss = self.loss_func(yb, logits)
@@ -207,35 +215,41 @@ class Baseline():
 
 class Baseline2D(Baseline):
     def __init__(self, config):
-        # simple resnet model 
+        # simple resnet model -- pretrained weights dont work with tf1.15
         self.model2d = tf.keras.applications.ResNet50(include_top=False, weights=None)
+        self.pool = tf.keras.layers.GlobalAveragePooling2D()
         self.flatten = tf.keras.layers.Flatten()
         self.dense1 = tf.keras.layers.Dense(config['NUM_CLASSES'], activation='softmax')
         super().__init__(config)
 
     def model(self, x):
         x = self.model2d(x)
+        x = self.pool(x)
         x = self.flatten(x)
         x = self.dense1(x)
         return x 
+
+    def set_input_shape(self, x):
+        x.set_shape([None, IMAGE_SIZE_H, IMAGE_SIZE_W, 3])
     
     def build_datapipeline(self):
-        # 2d image data -- will auto flatten to (H, W, C)
-        # l2e = lambda x: line2example(x, n_frames=1)
-        # def single_frame
 
-        train_dataset = tf.data.TFRecordDataset(DATAFILE_PATH+'train.tfrecord')\
+        # ASL training 
+        train_dataset = tf.data.TFRecordDataset(DATAFILE_PATH+'train.tfrecord', num_parallel_reads=3)\
             .map(_parse_image_function)\
+            .map(single_frame)\
             .prefetch(PREFETCH_BUFFER)\
             .batch(BATCH_SIZE)
 
-        val_dataset = tf.data.TFRecordDataset(DATAFILE_PATH+'val.tfrecord')\
+        val_dataset = tf.data.TFRecordDataset(DATAFILE_PATH+'val.tfrecord', num_parallel_reads=3)\
             .map(_parse_image_function)\
+            .map(single_frame)\
             .prefetch(PREFETCH_BUFFER)\
             .batch(BATCH_SIZE)
         
-        test_dataset = tf.data.TFRecordDataset(DATAFILE_PATH+'val.tfrecord')\
+        test_dataset = tf.data.TFRecordDataset(DATAFILE_PATH+'val.tfrecord', num_parallel_reads=3)\
             .map(_parse_image_function)\
+            .map(single_frame)\
             .prefetch(PREFETCH_BUFFER)\
             .batch(BATCH_SIZE)
 
@@ -249,21 +263,19 @@ class Baseline2D(Baseline):
         self.test_handle = self.test_iterator.string_handle()
 
         self.handle_flag = tf.compat.v1.placeholder(tf.string, [], name='iterator_handle_flag')
-        dataset_iterator = tf.compat.v1.data.Iterator.from_string_handle(self.handle_flag, 
+        self.dataset_iterator = tf.compat.v1.data.Iterator.from_string_handle(self.handle_flag, 
             tf.compat.v1.data.get_output_types(train_dataset), 
             tf.compat.v1.data.get_output_shapes(train_dataset))
-
-        return dataset_iterator
     
     def build_graph(self):
-        dataset_iterator = self.build_datapipeline()
+        self.build_datapipeline()
 
         # model evaluation 
-        xb, yb = dataset_iterator.get_next()
-        xb.set_shape([None, IMAGE_SIZE_H, IMAGE_SIZE_W, 3])
+        self.xb, self.yb, _, _ = self.dataset_iterator.get_next()
+        self.set_input_shape(self.xb)
 
-        logits = self.model(xb)
-        self.loss = self.loss_func(yb, logits)
+        self.logits = self.model(self.xb)
+        self.loss = self.loss_func(self.yb, self.logits)
 
         # add layer losses (L1, L2, etc.)
         if self.layer_regularization: 
@@ -272,7 +284,7 @@ class Baseline2D(Baseline):
 
         self.grads = tf.gradients(self.loss, tf.compat.v1.trainable_variables())
 
-        self.acc, self.acc_op = tf.compat.v1.metrics.accuracy(tf.argmax(yb, 1), tf.argmax(logits, 1), name='acc')
+        self.acc, self.acc_op = tf.compat.v1.metrics.accuracy(tf.argmax(self.yb, 1), tf.argmax(self.logits, 1), name='acc')
         self.acc_vars = tf.compat.v1.get_collection(tf.compat.v1.GraphKeys.LOCAL_VARIABLES, scope="acc")
         self.acc_initializer = tf.compat.v1.variables_initializer(var_list=self.acc_vars)
 

@@ -55,6 +55,7 @@ def inf():
 
 def train(trainer):
     multi_gpu = True if N_GPUS > 1 else False
+    # multi_gpu = False 
     if multi_gpu:
         print('Using Multi-GPU setup...')
         with tf.device('/cpu:0'):
@@ -62,7 +63,7 @@ def train(trainer):
             loss_tensors, accuracy_tensors = [], []
 
             xb, yb, _, _ = trainer.dataset_iterator.get_next()
-            xb.set_shape([None, 10, IMAGE_SIZE_H, IMAGE_SIZE_W, 3])
+            trainer.set_input_shape(xb)
 
             def compute_loss_acc(xb, yb):
                 logits = trainer.model(xb)
@@ -127,11 +128,16 @@ def train(trainer):
                                     trainer.is_training: True})
                         metrics['train_acc'].append(acc)
                     else: 
-                        _, loss, _ = sess.run([trainer.train_op, trainer.loss, \
-                                    trainer.acc_op], \
+                        _, loss, _, logits, yb, xb = sess.run([trainer.train_op, trainer.loss, \
+                                    trainer.acc_op, 
+                                    trainer.logits, trainer.yb, trainer.xb
+                                    ], \
                                     feed_dict={trainer.handle_flag: train_handle_value,
                                     trainer.is_training: True})
                     metrics['train_loss'].append(loss)
+
+                    # watch for nans 
+                    assert not np.any(np.isnan(loss)), print(logits[0], np.argmax(yb, -1), loss)
 
                     step += 1
                     if step % 50 == 0: 
@@ -199,7 +205,7 @@ def train(trainer):
     return trainer 
 
 #%%
-TRIAL_RUN = True
+TRIAL_RUN = False
 writer = NeptuneWriter('gebob19/672-asl')
 
 EPOCHS = 100 if not TRIAL_RUN else 1
@@ -285,7 +291,7 @@ trainers += new_trainers
 configs += new_configs
 
 # if TRIAL_RUN:
-trainers = [Baseline]
+trainers = [Baseline2D]
 configs = [config]
 
 for config, trainer_class in zip(configs, trainers): 

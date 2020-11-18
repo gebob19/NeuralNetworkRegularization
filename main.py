@@ -15,7 +15,7 @@ print("Num GPUs Available: ", N_GPUS)
 #%%
 def get_train_test(batch_size=32):
     (x_train, y_train), (x_test, y_test) = tf.keras.datasets.mnist.load_data()
-    x_train, x_test = x_train[:, :, :, None].astype(np.float32), x_test[:, :, :, None].astype(np.float32)
+    x_train, x_test = x_train[:, :, :, None].astype(np.float32)/ 255., x_test[:, :, :, None].astype(np.float32)/ 255.
 
     # x_train = np.reshape(x_train, (-1, 784)).astype(np.float32)
     # x_test = np.reshape(x_test, (-1, 784)).astype(np.float32)
@@ -36,7 +36,6 @@ def get_train_test(batch_size=32):
     x_train = x_train[:-10000]
 
     return (x_train, y_train), (x_val, y_val), (x_test, y_test)
-
 
 #%%
 def shuffle_and_overwrite(file_name):
@@ -81,15 +80,12 @@ def inf():
 
 def train(trainer):
     multi_gpu = True if N_GPUS > 1 else False
-    multi_gpu = False 
+    # multi_gpu = False 
     if multi_gpu:
         print('Using Multi-GPU setup...')
         with tf.device('/cpu:0'):
             # MULTI-GPU SETUP 
             loss_tensors, accuracy_tensors = [], []
-
-            xb, yb, _, _ = trainer.dataset_iterator.get_next()
-            xb.set_shape([None, 10, IMAGE_SIZE_H, IMAGE_SIZE_W, 3])
 
             def compute_loss_acc(xb, yb):
                 logits = trainer.model(xb)
@@ -97,31 +93,36 @@ def train(trainer):
                 acc, _ = tf.compat.v1.metrics.accuracy(tf.argmax(yb, 1), tf.argmax(logits, 1), name='acc')
                 return loss, acc
 
+            xb, yb = trainer.dataset_iterator.get_next()
+            trainer.set_input_shape(xb)
+            
             tower_grads = []
+            dependencies = []
             for i in range(N_GPUS):
                 with tf.device('/gpu:{}'.format(i)):
                     with tf.name_scope('GPU_{}'.format(i)) as scope:
+
                         loss, acc = compute_loss_acc(xb, yb)
+
                         grads = trainer.optimizer.compute_gradients(loss)
 
                         tower_grads.append(grads)
                         loss_tensors.append(loss)
                         accuracy_tensors.append(acc)
-                        update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS, scope)
+
+                        dependencies.append(loss)
 
             grads = average_gradients(tower_grads)
             apply_gradient_op = trainer.optimizer.apply_gradients(grads)
 
-            with tf.control_dependencies(update_ops):
-                train_op = tf.group(apply_gradient_op, name='train_op')
+            # run a training step on each GPU before applying gradients 
+            with tf.control_dependencies(dependencies):
+                train_op = tf.group(apply_gradient_op)
 
             avg_loss = tf.reduce_mean(loss_tensors)
             avg_acc = tf.reduce_mean(accuracy_tensors)
     else: 
         print('Not using Multi-GPU setup...')
-
-    # mnist test 
-    (x_train, y_train), (x_val, y_val), (x_test, y_test) = get_train_test()
 
     with tf.compat.v1.Session(config=tf.compat.v1.ConfigProto(allow_soft_placement=True)) as sess:
         best_sess = sess
@@ -131,20 +132,18 @@ def train(trainer):
         step = 0
 
         sess.run([tf.compat.v1.global_variables_initializer(), \
-            tf.compat.v1.local_variables_initializer()])
+                tf.compat.v1.local_variables_initializer()])
 
-        # train_handle_value, val_handle_value, test_handle_value = \
-        #     sess.run([trainer.train_handle, trainer.val_handle, trainer.test_handle])
+        train_handle_value, val_handle_value, test_handle_value = \
+            sess.run([trainer.train_handle, trainer.val_handle, trainer.test_handle])
 
         for e in range(EPOCHS):
             metrics = init_metrics()
             
-            # sess.run([trainer.train_iterator.initializer, \
-            #     trainer.val_iterator.initializer, trainer.test_iterator.initializer])
+            sess.run([trainer.train_iterator.initializer, \
+                trainer.val_iterator.initializer, trainer.test_iterator.initializer])
 
             # training 
-            sess.run(trainer.dset_init, \
-                feed_dict={trainer.x_data: x_train, trainer.y_data: y_train})
             try: 
                 print('Training...')
                 sess.run(trainer.acc_initializer) # reset accuracy metric
@@ -152,46 +151,42 @@ def train(trainer):
 
                     if multi_gpu: 
                         ## RUN SESS WITH MULTI-GPU VALUES 
-                        _, loss, acc = sess.run([train_op, avg_loss, \
+                        _, loss_value, acc_value = sess.run([train_op, avg_loss, \
                                     avg_acc], \
                                     feed_dict={trainer.handle_flag: train_handle_value,
                                     trainer.is_training: True})
-                        metrics['train_acc'].append(acc)
+                        metrics['train_acc'].append(acc_value)
                     else: 
-                        _, loss, _ = sess.run([trainer.train_op, trainer.loss, trainer.acc_op])
-                        # _, loss, _ = sess.run([trainer.train_op, trainer.loss, \
-                        #             trainer.acc_op], \
-                        #             feed_dict={trainer.handle_flag: train_handle_value,
-                        #             trainer.is_training: True})
+                        _, loss_value, _ = sess.run([trainer.train_op, trainer.loss, \
+                                    trainer.acc_op], \
+                                    feed_dict={trainer.handle_flag: train_handle_value,
+                                    trainer.is_training: True})
 
-                    metrics['train_loss'].append(loss)
+                    metrics['train_loss'].append(loss_value)
 
-                    step += 1
-                    # if step % 50 == 0: 
-                    #     if not multi_gpu: 
-                    #         metrics['train_acc'] = [sess.run(trainer.acc)]
-                    #         sess.run(trainer.acc_initializer) # reset accuracy metric
-                    #     mean_metrics = mean_over_dict(metrics)
-                    #     writer.write(mean_metrics, step)
-                    #     metrics = init_metrics()
+                    # watch for nans 
+                    assert not np.any(np.isnan(loss_value)), print(logits[0], np.argmax(yb, -1), loss_value)
+
+                    step += 1 
+                    if step % 50 == 0: 
+                        if not multi_gpu: 
+                            metrics['train_acc'] = [sess.run(trainer.acc)]
+                            sess.run(trainer.acc_initializer) # reset accuracy metric
+                        mean_metrics = mean_over_dict(metrics)
+                        writer.write(mean_metrics, step)
+                        metrics = init_metrics()
                     
                     if TRIAL_RUN: break 
             except tf.errors.OutOfRangeError: pass 
             metrics['train_acc'] = [sess.run(trainer.acc)]
 
-            # validation -- always single GPU for simplicity 
-            sess.run(trainer.acc_initializer) # reset accuracy metric
-            sess.run(trainer.dset_init, feed_dict={
-                trainer.x_data: x_val, 
-                trainer.y_data: y_val})
             try: 
                 sess.run(trainer.acc_initializer) # reset accuracy metric
                 for i in tqdm(inf()):
-                    loss, _ = sess.run([trainer.loss, trainer.acc_op])        
-                    # loss, _ = sess.run([trainer.loss, trainer.acc_op], \
-                    #     feed_dict={trainer.handle_flag: val_handle_value, 
-                    #     trainer.is_training: False})        
-                    metrics['val_loss'].append(loss)
+                    loss_value, _ = sess.run([trainer.loss, trainer.acc_op], \
+                        feed_dict={trainer.handle_flag: val_handle_value, 
+                        trainer.is_training: False})        
+                    metrics['val_loss'].append(loss_value)
                     
                     if TRIAL_RUN: break 
             except tf.errors.OutOfRangeError: pass 
@@ -218,27 +213,27 @@ def train(trainer):
                 print('Early stopping...')
                 break 
 
-        # # test -- also single GPU  
-        # try: 
-        #     sess = best_sess # restore session with the best score
-        #     sess.run(trainer.acc_initializer) # reset accuracy metric
-        #     while True:
-        #         sess.run([trainer.acc_op], \
-        #             feed_dict={
-        #                 trainer.handle_flag: test_handle_value, 
-        #                 trainer.is_training: False})        
-        #         if TRIAL_RUN: break 
-        # except tf.errors.OutOfRangeError: pass 
+        # test -- also single GPU  
+        try: 
+            sess = best_sess # restore session with the best score
+            sess.run(trainer.acc_initializer) # reset accuracy metric
+            while True:
+                sess.run([trainer.acc_op], \
+                    feed_dict={
+                        trainer.handle_flag: test_handle_value, 
+                        trainer.is_training: False})        
+                if TRIAL_RUN: break 
+        except tf.errors.OutOfRangeError: pass 
 
-        # test_acc = sess.run(trainer.acc)
-        # writer.write({'test_acc': test_acc}, e+1)
-        # print('test_accuracy: ', test_acc)
+        test_acc = sess.run(trainer.acc)
+        writer.write({'test_acc': test_acc}, e+1)
+        print('test_accuracy: ', test_acc)
 
         writer.fin()
     return trainer 
 
 #%%
-TRIAL_RUN = True
+TRIAL_RUN = False
 writer = NeptuneWriter('gebob19/672-asl')
 
 EPOCHS = 100 if not TRIAL_RUN else 1

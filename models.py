@@ -65,44 +65,43 @@ context_features = {
 def resize(x):
     return tf.image.resize(x, [IMAGE_SIZE_H, IMAGE_SIZE_W])
 
-def _parse_image_function(example_proto):
-    # Parse the input tf.train.Example proto using the dictionary above.
+@tf.function
+def _parse_image_function(example_proto, single_frame=False):
     context, sequence = tf.parse_single_sequence_example(
             example_proto, context_features=context_features, sequence_features=sequence_features)
     
+    if single_frame: 
+        context['temporal'] = 1 
+
     shape = (context['temporal'], context['height'], context['width'], context['depth'])
 
-    # literally had to brute force this shit to get it working 
+    ## gold 
     video_data = tf.expand_dims(
         tf.image.decode_image(tf.gather(sequence['data'], [0])[0]), 0)
     i = tf.constant(1, dtype=tf.int32)
     cond = lambda i, _: tf.less(i, tf.cast(context['temporal'], tf.int32))
     def body(i, video_data):
-        video3D = tf.gather(sequence['data'], [i])
-        img_data = tf.image.decode_image(video3D[0]) 
+        encoded_img = tf.gather(sequence['data'], [i])
+        img_data = tf.image.decode_image(encoded_img[0]) 
         video_data = tf.concat([video_data, [img_data]], 0)
         return (tf.add(i, 1), video_data)
 
     _, video_data = tf.while_loop(cond, body, [i, video_data], 
         shape_invariants=[i.get_shape(), tf.TensorShape([None])])
     # use this to set the shape -- doesn't change anything 
-    video3D = video_data
-    video3D = tf.reshape(video3D, shape)
-    video3D = tf.cast(video3D, tf.float32)
-
-    # # sample across temporal frames 
-    # idxs = tf.random.uniform((N_FRAMES,), minval=0,
-    #         maxval=tf.cast(context['temporal'], tf.int32), 
-    #         dtype=tf.int32)
-    # video3D = tf.cast(tf.gather(video3D, idxs), tf.float32)
+    video_data = tf.reshape(video_data, shape)
+    video_data = tf.cast(video_data, tf.float32)
 
     # resize images in video
-    video3D = tf.map_fn(resize, video3D, back_prop=False, parallel_iterations=10)
+    video_data = tf.map_fn(resize, video_data, back_prop=False, parallel_iterations=10)
+    # normalize to [0, 1]
+    video_data = tf.math.divide(video_data, 255.)
+    video_data = tf.squeeze(video_data)
 
     label = context['label']
     label = tf.one_hot(label, NUM_CLASSES)
 
-    return video3D, label, context['filename'], shape
+    return video_data, label#, context['filename'], shape
 
 ####### trainer classes 
 
@@ -110,7 +109,8 @@ class Baseline():
     def __init__(self, config):
         self.layers = self.get_layers(config)
 
-        self.optimizer = tf.compat.v1.train.AdamOptimizer(1e-3)
+        # self.optimizer = tf.compat.v1.train.AdamOptimizer(1e-3)
+        self.optimizer = tf.train.GradientDescentOptimizer(1e-2)
         self.loss_func = tf.keras.losses.CategoricalCrossentropy(from_logits=True)
         self.is_training = tf.compat.v1.placeholder_with_default(True, shape=())
         self.layer_regularization = self.get_layer_regularization_flag()
@@ -150,18 +150,21 @@ class Baseline():
             x = layer(x)
         return x 
 
+    def set_input_shape(self, x):
+        x.set_shape([None, 10, IMAGE_SIZE_H, IMAGE_SIZE_W, 3])
+
     def build_datapipeline(self):
-        train_dataset = tf.data.TFRecordDataset(DATAFILE_PATH+'train.tfrecord')\
+        train_dataset = tf.data.TFRecordDataset(DATAFILE_PATH+'train.tfrecord', num_parallel_reads=3)\
             .map(_parse_image_function)\
             .prefetch(PREFETCH_BUFFER)\
             .batch(BATCH_SIZE)
 
-        val_dataset = tf.data.TFRecordDataset(DATAFILE_PATH+'val.tfrecord')\
+        val_dataset = tf.data.TFRecordDataset(DATAFILE_PATH+'val.tfrecord', num_parallel_reads=3)\
             .map(_parse_image_function)\
             .prefetch(PREFETCH_BUFFER)\
             .batch(BATCH_SIZE)
         
-        test_dataset = tf.data.TFRecordDataset(DATAFILE_PATH+'val.tfrecord')\
+        test_dataset = tf.data.TFRecordDataset(DATAFILE_PATH+'val.tfrecord', num_parallel_reads=3)\
             .map(_parse_image_function)\
             .prefetch(PREFETCH_BUFFER)\
             .batch(BATCH_SIZE)
@@ -187,7 +190,7 @@ class Baseline():
 
         # model evaluation 
         xb, yb, _, _ = self.dataset_iterator.get_next()
-        xb.set_shape([None, 10, IMAGE_SIZE_H, IMAGE_SIZE_W, 3])
+        self.set_input_shape(xb)
 
         logits = self.model(xb)
         self.loss = self.loss_func(yb, logits)
@@ -207,10 +210,6 @@ class Baseline():
 
 class Baseline2D(Baseline):
     def __init__(self, config):
-        # # simple resnet model 
-        # self.model2d = tf.keras.applications.ResNet50(include_top=False, weights=None)
-        # self.flatten = tf.keras.layers.Flatten()
-        # self.dense1 = tf.keras.layers.Dense(config['NUM_CLASSES'], activation='softmax')
         super().__init__(config)
 
     def get_layers(self, config):
@@ -230,70 +229,70 @@ class Baseline2D(Baseline):
             tf.keras.layers.Dense(config['NUM_CLASSES'], activation='softmax'), 
         ]
 
-    # def model(self, x):
-    #     x = self.model2d(x)
-    #     x = self.flatten(x)
-    #     x = self.dense1(x)
-    #     return x 
+    def set_input_shape(self, xb):
+        xb.set_shape([None, IMAGE_SIZE_H, IMAGE_SIZE_W, 3])
     
     def build_datapipeline(self):
-        self.x_data = tf.placeholder(np.float32, [None, 28, 28, 1])
-        self.y_data = tf.placeholder(np.float32, [None, 10])
-        dataset = tf.data.Dataset.from_tensor_slices((self.x_data, self.y_data))\
-            .batch(BATCH_SIZE)
-        self.dataset_iterator = tf.data.Iterator.from_structure(dataset.output_types,
-                                                  dataset.output_shapes)
-        self.dset_init = self.dataset_iterator.make_initializer(dataset)
+        @tf.function
+        def tmp(x):
+            return _parse_image_function(x, single_frame=True)
 
-        return self.dataset_iterator
+        train_dataset = tf.data.TFRecordDataset(DATAFILE_PATH+'train.tfrecord',\
+            num_parallel_reads=tf.data.experimental.AUTOTUNE, buffer_size=50)\
+            .map(tmp, num_parallel_calls=tf.data.experimental.AUTOTUNE)\
+            .prefetch(PREFETCH_BUFFER)\
+            .batch(BATCH_SIZE)\
+            # .map(single_frame, num_parallel_calls=tf.data.experimental.AUTOTUNE)\
+            # .cache()
 
-        # train_dataset = tf.data.TFRecordDataset(DATAFILE_PATH+'train.tfrecord')\
-        #     .map(_parse_image_function)\
-        #     .prefetch(PREFETCH_BUFFER)\
-        #     .batch(BATCH_SIZE)
-
-        # val_dataset = tf.data.TFRecordDataset(DATAFILE_PATH+'val.tfrecord')\
-        #     .map(_parse_image_function)\
-        #     .prefetch(PREFETCH_BUFFER)\
-        #     .batch(BATCH_SIZE)
+        val_dataset = tf.data.TFRecordDataset(DATAFILE_PATH+'val.tfrecord',\
+            num_parallel_reads=tf.data.experimental.AUTOTUNE, buffer_size=50)\
+            .map(tmp, num_parallel_calls=tf.data.experimental.AUTOTUNE)\
+            .prefetch(PREFETCH_BUFFER)\
+            .batch(BATCH_SIZE)\
+            # .cache()
+            # .map(single_frame, num_parallel_calls=tf.data.experimental.AUTOTUNE)\
         
-        # test_dataset = tf.data.TFRecordDataset(DATAFILE_PATH+'val.tfrecord')\
-        #     .map(_parse_image_function)\
-        #     .prefetch(PREFETCH_BUFFER)\
-        #     .batch(BATCH_SIZE)
+        test_dataset = tf.data.TFRecordDataset(DATAFILE_PATH+'val.tfrecord',\
+            num_parallel_reads=tf.data.experimental.AUTOTUNE, buffer_size=50)\
+            .map(tmp, num_parallel_calls=tf.data.experimental.AUTOTUNE)\
+            .prefetch(PREFETCH_BUFFER)\
+            .batch(BATCH_SIZE)\
+            # .map(single_frame, num_parallel_calls=tf.data.experimental.AUTOTUNE)\
+            # .cache()
 
-        # self.train_iterator = tf.compat.v1.data.make_initializable_iterator(train_dataset)
-        # self.train_handle = self.train_iterator.string_handle()
+        self.train_iterator = tf.compat.v1.data.make_initializable_iterator(train_dataset)
+        self.train_handle = self.train_iterator.string_handle()
 
-        # self.val_iterator = tf.compat.v1.data.make_initializable_iterator(val_dataset)
-        # self.val_handle = self.val_iterator.string_handle()
+        self.val_iterator = tf.compat.v1.data.make_initializable_iterator(val_dataset)
+        self.val_handle = self.val_iterator.string_handle()
 
-        # self.test_iterator = tf.compat.v1.data.make_initializable_iterator(test_dataset)
-        # self.test_handle = self.test_iterator.string_handle()
+        self.test_iterator = tf.compat.v1.data.make_initializable_iterator(test_dataset)
+        self.test_handle = self.test_iterator.string_handle()
 
-        # self.handle_flag = tf.compat.v1.placeholder(tf.string, [], name='iterator_handle_flag')
-        # dataset_iterator = tf.compat.v1.data.Iterator.from_string_handle(self.handle_flag, 
-        #     tf.compat.v1.data.get_output_types(train_dataset), 
-        #     tf.compat.v1.data.get_output_shapes(train_dataset))
+        self.handle_flag = tf.compat.v1.placeholder(tf.string, [], name='iterator_handle_flag')
+        self.dataset_iterator = tf.compat.v1.data.Iterator.from_string_handle(self.handle_flag, 
+            tf.compat.v1.data.get_output_types(train_dataset), 
+            tf.compat.v1.data.get_output_shapes(train_dataset))
     
     def build_graph(self):
         self.build_datapipeline()
 
         # model evaluation 
-        xb, yb = self.dataset_iterator.get_next()
-        # xb.set_shape([None, IMAGE_SIZE_H, IMAGE_SIZE_W, 3])
+        self.xb, self.yb = self.dataset_iterator.get_next()
+        self.set_input_shape(self.xb)
 
-        logits = self.model(xb)
-        self.loss = self.loss_func(yb, logits)
+        self.logits = self.model(self.xb)
+        self.loss = self.loss_func(self.yb, self.logits)
 
-        # add layer losses (L1, L2, etc.)
-        if self.layer_regularization: 
-            for layer in self.layers: 
-                self.loss += tf.math.reduce_sum(layer.losses)
+        # # add layer losses (L1, L2, etc.)
+        # if self.layer_regularization: 
+        #     for layer in self.layers: 
+        #         self.loss += tf.math.reduce_sum(layer.losses)
 
         self.grads = tf.gradients(self.loss, tf.compat.v1.trainable_variables())
 
-        self.acc, self.acc_op = tf.compat.v1.metrics.accuracy(tf.argmax(yb, 1), tf.argmax(logits, 1), name='acc')
+        self.acc, self.acc_op = tf.compat.v1.metrics.accuracy(tf.argmax(self.yb, 1), tf.argmax(self.logits, 1), name='acc')
         self.acc_vars = tf.compat.v1.get_collection(tf.compat.v1.GraphKeys.LOCAL_VARIABLES, scope="acc")
         self.acc_initializer = tf.compat.v1.variables_initializer(var_list=self.acc_vars)
 

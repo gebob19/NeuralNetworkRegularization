@@ -80,7 +80,7 @@ def inf():
 
 def train(trainer):
     multi_gpu = True if N_GPUS > 1 else False
-    multi_gpu = False 
+    # multi_gpu = False 
     if multi_gpu:
         print('Using Multi-GPU setup...')
         with tf.device('/cpu:0'):

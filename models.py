@@ -109,7 +109,7 @@ class Baseline():
     def __init__(self, config):
         self.layers = self.get_layers(config)
 
-        self.optimizer = tf.compat.v1.train.AdamOptimizer(5e-4)
+        self.optimizer = tf.compat.v1.train.AdamOptimizer(1e-3)
         self.loss_func = tf.keras.losses.CategoricalCrossentropy(from_logits=True)
         self.is_training = tf.compat.v1.placeholder_with_default(True, shape=())
         self.layer_regularization = self.get_layer_regularization_flag()

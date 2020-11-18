@@ -326,8 +326,8 @@ configs = [config]
 
 for config, trainer_class in zip(configs, trainers): 
     config['experiment_name'] = trainer_class.__name__
-    # if not TRIAL_RUN:
-    #     writer.start(config)
+    if not TRIAL_RUN:
+        writer.start(config)
 
     tf.compat.v1.reset_default_graph()
     trainer = trainer_class(config)

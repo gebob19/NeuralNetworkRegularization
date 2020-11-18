@@ -1,11 +1,11 @@
-IMAGE_SIZE_H, IMAGE_SIZE_W = 28, 28
-BATCH_SIZE = 16
-PREFETCH_BUFFER = BATCH_SIZE
-TOP_N = 10
+IMAGE_SIZE_H, IMAGE_SIZE_W = 224, 224
+BATCH_SIZE = 64
+TOP_N = 100
 NUM_CLASSES = TOP_N
 
 import tensorflow as tf 
 N_GPUS = len(tf.config.experimental.list_physical_devices('GPU'))
+PREFETCH_BUFFER = tf.data.experimental.AUTOTUNE
 
 VIP = True if N_GPUS > 1 else False 
 DESKTOP = True if N_GPUS == 1 else False

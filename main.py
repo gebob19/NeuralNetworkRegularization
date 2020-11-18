@@ -13,6 +13,32 @@ print(tf.__version__)
 print("Num GPUs Available: ", N_GPUS)
 
 #%%
+def get_train_test(batch_size=32):
+    (x_train, y_train), (x_test, y_test) = tf.keras.datasets.mnist.load_data()
+    x_train, x_test = x_train[:, :, :, None].astype(np.float32), x_test[:, :, :, None].astype(np.float32)
+
+    # x_train = np.reshape(x_train, (-1, 784)).astype(np.float32)
+    # x_test = np.reshape(x_test, (-1, 784)).astype(np.float32)
+
+    # one-hot encoding 
+    oh = np.zeros((y_train.size, 10))
+    oh[np.arange(y_train.size), y_train] = 1 
+    y_train = oh
+
+    oh = np.zeros((y_test.size, 10))
+    oh[np.arange(y_test.size), y_test] = 1 
+    y_test = oh
+
+    # Reserve 10,000 samples for validation.
+    x_val = x_train[-10000:]
+    y_val = y_train[-10000:]
+    y_train = y_train[:-10000]
+    x_train = x_train[:-10000]
+
+    return (x_train, y_train), (x_val, y_val), (x_test, y_test)
+
+
+#%%
 def shuffle_and_overwrite(file_name):
     content = open(file_name, 'r').readlines()
     random.shuffle(content)
@@ -55,7 +81,7 @@ def inf():
 
 def train(trainer):
     multi_gpu = True if N_GPUS > 1 else False
-    # multi_gpu = False 
+    multi_gpu = False 
     if multi_gpu:
         print('Using Multi-GPU setup...')
         with tf.device('/cpu:0'):
@@ -94,7 +120,9 @@ def train(trainer):
     else: 
         print('Not using Multi-GPU setup...')
 
-    # softplacement for multi-gpus 
+    # mnist test 
+    (x_train, y_train), (x_val, y_val), (x_test, y_test) = get_train_test()
+
     with tf.compat.v1.Session(config=tf.compat.v1.ConfigProto(allow_soft_placement=True)) as sess:
         best_sess = sess
         best_score = 0. 
@@ -105,16 +133,18 @@ def train(trainer):
         sess.run([tf.compat.v1.global_variables_initializer(), \
             tf.compat.v1.local_variables_initializer()])
 
-        train_handle_value, val_handle_value, test_handle_value = \
-            sess.run([trainer.train_handle, trainer.val_handle, trainer.test_handle])
+        # train_handle_value, val_handle_value, test_handle_value = \
+        #     sess.run([trainer.train_handle, trainer.val_handle, trainer.test_handle])
 
         for e in range(EPOCHS):
             metrics = init_metrics()
             
-            sess.run([trainer.train_iterator.initializer, \
-                trainer.val_iterator.initializer, trainer.test_iterator.initializer])
+            # sess.run([trainer.train_iterator.initializer, \
+            #     trainer.val_iterator.initializer, trainer.test_iterator.initializer])
 
             # training 
+            sess.run(trainer.dset_init, \
+                feed_dict={trainer.x_data: x_train, trainer.y_data: y_train})
             try: 
                 print('Training...')
                 sess.run(trainer.acc_initializer) # reset accuracy metric
@@ -128,36 +158,42 @@ def train(trainer):
                                     trainer.is_training: True})
                         metrics['train_acc'].append(acc)
                     else: 
-                        _, loss, _, logits, yb, xb = sess.run([trainer.train_op, trainer.loss, \
-                                    trainer.acc_op, 
-                                    trainer.logits, trainer.yb, trainer.xb
-                                    ], \
-                                    feed_dict={trainer.handle_flag: train_handle_value,
-                                    trainer.is_training: True})
+                        _, loss, _ = sess.run([trainer.train_op, trainer.loss, trainer.acc_op])
+                        # _, loss, _ = sess.run([trainer.train_op, trainer.loss, \
+                        #             trainer.acc_op], \
+                        #             feed_dict={trainer.handle_flag: train_handle_value,
+                        #             trainer.is_training: True})
+
                     metrics['train_loss'].append(loss)
 
                     # watch for nans 
                     assert not np.any(np.isnan(loss)), print(logits[0], np.argmax(yb, -1), loss)
 
                     step += 1
-                    if step % 50 == 0: 
-                        if not multi_gpu: 
-                            metrics['train_acc'] = [sess.run(trainer.acc)]
-                            sess.run(trainer.acc_initializer) # reset accuracy metric
-                        mean_metrics = mean_over_dict(metrics)
-                        writer.write(mean_metrics, step)
-                        metrics = init_metrics()
+                    # if step % 50 == 0: 
+                    #     if not multi_gpu: 
+                    #         metrics['train_acc'] = [sess.run(trainer.acc)]
+                    #         sess.run(trainer.acc_initializer) # reset accuracy metric
+                    #     mean_metrics = mean_over_dict(metrics)
+                    #     writer.write(mean_metrics, step)
+                    #     metrics = init_metrics()
                     
                     if TRIAL_RUN: break 
             except tf.errors.OutOfRangeError: pass 
+            metrics['train_acc'] = [sess.run(trainer.acc)]
 
             # validation -- always single GPU for simplicity 
+            sess.run(trainer.acc_initializer) # reset accuracy metric
+            sess.run(trainer.dset_init, feed_dict={
+                trainer.x_data: x_val, 
+                trainer.y_data: y_val})
             try: 
                 sess.run(trainer.acc_initializer) # reset accuracy metric
                 for i in tqdm(inf()):
-                    loss, _ = sess.run([trainer.loss, trainer.acc_op], \
-                        feed_dict={trainer.handle_flag: val_handle_value, 
-                        trainer.is_training: False})        
+                    loss, _ = sess.run([trainer.loss, trainer.acc_op])        
+                    # loss, _ = sess.run([trainer.loss, trainer.acc_op], \
+                    #     feed_dict={trainer.handle_flag: val_handle_value, 
+                    #     trainer.is_training: False})        
                     metrics['val_loss'].append(loss)
                     
                     if TRIAL_RUN: break 
@@ -185,21 +221,21 @@ def train(trainer):
                 print('Early stopping...')
                 break 
 
-        # test -- also single GPU  
-        try: 
-            sess = best_sess # restore session with the best score
-            sess.run(trainer.acc_initializer) # reset accuracy metric
-            while True:
-                sess.run([trainer.acc_op], \
-                    feed_dict={
-                        trainer.handle_flag: test_handle_value, 
-                        trainer.is_training: False})        
-                if TRIAL_RUN: break 
-        except tf.errors.OutOfRangeError: pass 
+        # # test -- also single GPU  
+        # try: 
+        #     sess = best_sess # restore session with the best score
+        #     sess.run(trainer.acc_initializer) # reset accuracy metric
+        #     while True:
+        #         sess.run([trainer.acc_op], \
+        #             feed_dict={
+        #                 trainer.handle_flag: test_handle_value, 
+        #                 trainer.is_training: False})        
+        #         if TRIAL_RUN: break 
+        # except tf.errors.OutOfRangeError: pass 
 
-        test_acc = sess.run(trainer.acc)
-        writer.write({'test_acc': test_acc}, e+1)
-        print('test_accuracy: ', test_acc)
+        # test_acc = sess.run(trainer.acc)
+        # writer.write({'test_acc': test_acc}, e+1)
+        # print('test_accuracy: ', test_acc)
 
         writer.fin()
     return trainer 

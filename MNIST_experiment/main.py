@@ -23,8 +23,10 @@ print(tf.__version__)
 #%%
 def get_train_test(batch_size=32):
     (x_train, y_train), (x_test, y_test) = tf.keras.datasets.mnist.load_data()
-    x_train = np.reshape(x_train, (-1, 784)).astype(np.float32)
-    x_test = np.reshape(x_test, (-1, 784)).astype(np.float32)
+    x_train, x_test = x_train.astype(np.float32), x_test.astype(np.float32)
+
+    # x_train = np.reshape(x_train, (-1, 784)).astype(np.float32)
+    # x_test = np.reshape(x_test, (-1, 784)).astype(np.float32)
 
     # one-hot encoding 
     oh = np.zeros((y_train.size, 10))
@@ -175,6 +177,12 @@ def train(trainer):
 
         W = sess.run(trainer.w)
     return trainer, W
+
+#%%
+(x_train, y_train), (x_val, y_val), (x_test, y_test) = get_train_test()
+#%%
+x_train.shape
+#%%
 
 #%%
 trial_run = True 

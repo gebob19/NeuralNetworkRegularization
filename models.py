@@ -234,7 +234,6 @@ class Baseline2D(Baseline):
 
     def model(self, x):
         # transpose to (temporal, batch, h, w, c)
-
         x = tf.transpose(x, perm=[1, 0, 2, 3, 4])
         y = tf.map_fn(super().model, x)
         # transpose back (batch, temporal, n_classes)
@@ -253,21 +252,20 @@ class Baseline2D(Baseline):
             .map(_parse_image_function, num_parallel_calls=tf.data.experimental.AUTOTUNE)\
             .prefetch(PREFETCH_BUFFER)\
             .batch(BATCH_SIZE)\
-            # .cache()
+            .cache()
 
         val_dataset = tf.data.TFRecordDataset(DATAFILE_PATH+'val.tfrecord',\
             num_parallel_reads=tf.data.experimental.AUTOTUNE, buffer_size=50)\
             .map(_parse_image_function, num_parallel_calls=tf.data.experimental.AUTOTUNE)\
             .prefetch(PREFETCH_BUFFER)\
             .batch(BATCH_SIZE)\
-            # .cache()
+            .cache()
         
         test_dataset = tf.data.TFRecordDataset(DATAFILE_PATH+'val.tfrecord',\
             num_parallel_reads=tf.data.experimental.AUTOTUNE, buffer_size=50)\
             .map(_parse_image_function, num_parallel_calls=tf.data.experimental.AUTOTUNE)\
             .prefetch(PREFETCH_BUFFER)\
             .batch(BATCH_SIZE)\
-            # .cache()
 
         self.train_iterator = tf.compat.v1.data.make_initializable_iterator(train_dataset)
         self.train_handle = self.train_iterator.string_handle()

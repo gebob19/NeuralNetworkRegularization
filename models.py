@@ -207,60 +207,81 @@ class Baseline():
 
 class Baseline2D(Baseline):
     def __init__(self, config):
-        # simple resnet model 
-        self.model2d = tf.keras.applications.ResNet50(include_top=False, weights=None)
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense1 = tf.keras.layers.Dense(config['NUM_CLASSES'], activation='softmax')
+        # # simple resnet model 
+        # self.model2d = tf.keras.applications.ResNet50(include_top=False, weights=None)
+        # self.flatten = tf.keras.layers.Flatten()
+        # self.dense1 = tf.keras.layers.Dense(config['NUM_CLASSES'], activation='softmax')
         super().__init__(config)
 
-    def model(self, x):
-        x = self.model2d(x)
-        x = self.flatten(x)
-        x = self.dense1(x)
-        return x 
+    def get_layers(self, config):
+        return [
+            tf.keras.layers.Conv2D(64, 7, strides=(2, 2), activation="relu", padding='same'),
+            
+            tf.keras.layers.Conv2D(128, 3, strides=(2, 2), activation="relu", padding='same'), 
+            tf.keras.layers.Conv2D(128, 3, activation="relu", padding='same'),
+            tf.keras.layers.MaxPool2D(2, padding='same'),
+
+            tf.keras.layers.Conv2D(256, 3, activation="relu", padding='same'),
+            tf.keras.layers.Conv2D(256, 3, activation="relu", padding='same'),
+            tf.keras.layers.MaxPool2D(2, padding='same'), 
+
+            tf.keras.layers.Flatten(), 
+            tf.keras.layers.Dense(128, activation="relu"), 
+            tf.keras.layers.Dense(config['NUM_CLASSES'], activation='softmax'), 
+        ]
+
+    # def model(self, x):
+    #     x = self.model2d(x)
+    #     x = self.flatten(x)
+    #     x = self.dense1(x)
+    #     return x 
     
     def build_datapipeline(self):
-        # 2d image data -- will auto flatten to (H, W, C)
-        # l2e = lambda x: line2example(x, n_frames=1)
-        # def single_frame
-
-        train_dataset = tf.data.TFRecordDataset(DATAFILE_PATH+'train.tfrecord')\
-            .map(_parse_image_function)\
-            .prefetch(PREFETCH_BUFFER)\
+        self.x_data = tf.placeholder(np.float32, [None, 28, 28, 1])
+        self.y_data = tf.placeholder(np.float32, [None, 10])
+        dataset = tf.data.Dataset.from_tensor_slices((self.x_data, self.y_data))\
             .batch(BATCH_SIZE)
+        self.dataset_iterator = tf.data.Iterator.from_structure(dataset.output_types,
+                                                  dataset.output_shapes)
+        self.dset_init = self.dataset_iterator.make_initializer(dataset)
 
-        val_dataset = tf.data.TFRecordDataset(DATAFILE_PATH+'val.tfrecord')\
-            .map(_parse_image_function)\
-            .prefetch(PREFETCH_BUFFER)\
-            .batch(BATCH_SIZE)
+        return self.dataset_iterator
+
+        # train_dataset = tf.data.TFRecordDataset(DATAFILE_PATH+'train.tfrecord')\
+        #     .map(_parse_image_function)\
+        #     .prefetch(PREFETCH_BUFFER)\
+        #     .batch(BATCH_SIZE)
+
+        # val_dataset = tf.data.TFRecordDataset(DATAFILE_PATH+'val.tfrecord')\
+        #     .map(_parse_image_function)\
+        #     .prefetch(PREFETCH_BUFFER)\
+        #     .batch(BATCH_SIZE)
         
-        test_dataset = tf.data.TFRecordDataset(DATAFILE_PATH+'val.tfrecord')\
-            .map(_parse_image_function)\
-            .prefetch(PREFETCH_BUFFER)\
-            .batch(BATCH_SIZE)
+        # test_dataset = tf.data.TFRecordDataset(DATAFILE_PATH+'val.tfrecord')\
+        #     .map(_parse_image_function)\
+        #     .prefetch(PREFETCH_BUFFER)\
+        #     .batch(BATCH_SIZE)
 
-        self.train_iterator = tf.compat.v1.data.make_initializable_iterator(train_dataset)
-        self.train_handle = self.train_iterator.string_handle()
+        # self.train_iterator = tf.compat.v1.data.make_initializable_iterator(train_dataset)
+        # self.train_handle = self.train_iterator.string_handle()
 
-        self.val_iterator = tf.compat.v1.data.make_initializable_iterator(val_dataset)
-        self.val_handle = self.val_iterator.string_handle()
+        # self.val_iterator = tf.compat.v1.data.make_initializable_iterator(val_dataset)
+        # self.val_handle = self.val_iterator.string_handle()
 
-        self.test_iterator = tf.compat.v1.data.make_initializable_iterator(test_dataset)
-        self.test_handle = self.test_iterator.string_handle()
+        # self.test_iterator = tf.compat.v1.data.make_initializable_iterator(test_dataset)
+        # self.test_handle = self.test_iterator.string_handle()
 
-        self.handle_flag = tf.compat.v1.placeholder(tf.string, [], name='iterator_handle_flag')
-        dataset_iterator = tf.compat.v1.data.Iterator.from_string_handle(self.handle_flag, 
-            tf.compat.v1.data.get_output_types(train_dataset), 
-            tf.compat.v1.data.get_output_shapes(train_dataset))
-
-        return dataset_iterator
+        # self.handle_flag = tf.compat.v1.placeholder(tf.string, [], name='iterator_handle_flag')
+        # dataset_iterator = tf.compat.v1.data.Iterator.from_string_handle(self.handle_flag, 
+        #     tf.compat.v1.data.get_output_types(train_dataset), 
+        #     tf.compat.v1.data.get_output_shapes(train_dataset))
     
     def build_graph(self):
-        dataset_iterator = self.build_datapipeline()
+        self.build_datapipeline()
 
         # model evaluation 
-        xb, yb = dataset_iterator.get_next()
-        xb.set_shape([None, IMAGE_SIZE_H, IMAGE_SIZE_W, 3])
+        xb, yb = self.dataset_iterator.get_next()
+        # xb.set_shape([None, IMAGE_SIZE_H, IMAGE_SIZE_W, 3])
 
         logits = self.model(xb)
         self.loss = self.loss_func(yb, logits)

@@ -96,7 +96,6 @@ def train(trainer):
                         tf.float32))
                 return loss, n_examples, n_correct
 
-
             tower_grads = []
             example_counter, correct_counter = [], []
             dependencies = []
@@ -135,8 +134,8 @@ def train(trainer):
         best_score = 0. 
         last_improvement = 0
         stop = False 
-        step = 0
 
+        print('Initializing Graph...')
         sess.run([tf.compat.v1.global_variables_initializer(), \
                 tf.compat.v1.local_variables_initializer()])
 
@@ -207,7 +206,7 @@ def train(trainer):
                 stop = True
 
             mean_metrics = mean_over_dict(metrics)
-            writer.write(mean_metrics, step)
+            writer.write(mean_metrics, e)
 
             print("{} {}".format(e, mean_metrics))
 
@@ -238,10 +237,10 @@ def train(trainer):
 TRIAL_RUN = False
 writer = NeptuneWriter('gebob19/672-asl')
 
-EPOCHS = 100 if not TRIAL_RUN else 1
+EPOCHS = 500 if not TRIAL_RUN else 1
 BATCH_SIZE = BATCH_SIZE if not TRIAL_RUN else 2
 PREFETCH_BUFFER = PREFETCH_BUFFER if not TRIAL_RUN else 2
-REQUIRED_IMPROVEMENT = 10
+REQUIRED_IMPROVEMENT = 100
 
 config = {
     'EPOCHS': EPOCHS,

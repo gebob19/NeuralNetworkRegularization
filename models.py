@@ -4,48 +4,6 @@ import imageio
 import cv2 
 from config import * 
 
-####### data loading helpers 
-
-def mp4_2_numpy(filename):
-    vid = imageio.get_reader(filename, 'ffmpeg')
-    data = np.stack(list(vid.iter_data()))
-    return data 
-
-def py_line2example(line, n_frames):
-    d = line.numpy().decode("utf-8").split(' ')
-    fn, label = '{}{}'.format(PATH2VIDEOS, d[0]), int(d[1])
-    vid = mp4_2_numpy(fn)
-    t, h, w, _ = vid.shape 
-    
-    # sample 10 random frames  -- fps == 24 
-    sampled_frame_idxs = np.linspace(0, t-1, num=n_frames, dtype=np.int32)
-    vid = vid[sampled_frame_idxs]
-
-    if h < IMAGE_SIZE_H or w < IMAGE_SIZE_W: 
-        vid = np.stack([cv2.resize(frame, (IMAGE_SIZE_W, IMAGE_SIZE_H)) for frame in vid])
-    else: 
-        # crop to IMAGE_SIZE x IMAGE_SIZE
-        h_start = (h - IMAGE_SIZE_H) // 2
-        w_start = (w - IMAGE_SIZE_W) // 2
-        vid = vid[:, h_start: h_start + IMAGE_SIZE_H, w_start: w_start + IMAGE_SIZE_W, :]
-    
-    # squeeze
-    if len(vid) == 1: 
-        vid = vid[0]
-    # T, H, W, C
-    # vid = vid.transpose((-1, 1, 2, 0))
-    vid = vid / 255. * 2 - 1
-
-    # one-hot encode label 
-    oh = np.zeros((NUM_CLASSES,))
-    oh[label] = 1 
-
-    return vid, oh
-    
-def line2example(x, n_frames=10):
-    image, label = tf.py_function(py_line2example, [x, n_frames], [tf.float32, tf.int32])
-    return image, label
-
 ######### TF Record helpers 
 
 sequence_features = {
@@ -209,20 +167,19 @@ class Baseline():
 
 class Baseline2D(Baseline):
     def __init__(self, config):
+        self.spine = tf.keras.applications.VGG16(include_top=False, \
+            weights=None, pooling='avg', \
+            input_shape=(IMAGE_SIZE_H, IMAGE_SIZE_W, 3))
+        self.n_classes = config['NUM_CLASSES']
         super().__init__(config)
 
-    def get_layers(self, config):
+    def get_layers(self, config): 
+        # @tf.function
+        # def preprocess(x):
+        #     return tf.keras.applications.resnet.preprocess_input(x)
+
         return [
-            tf.keras.layers.Conv2D(64, 7, strides=(2, 2), activation="relu", padding='same'),
-            
-            tf.keras.layers.Conv2D(128, 3, strides=(2, 2), activation="relu", padding='same'), 
-            tf.keras.layers.Conv2D(128, 3, activation="relu", padding='same'),
-            tf.keras.layers.MaxPool2D(2, padding='same'),
-
-            tf.keras.layers.Conv2D(256, 3, activation="relu", padding='same'),
-            tf.keras.layers.Conv2D(256, 3, activation="relu", padding='same'),
-            tf.keras.layers.MaxPool2D(2, padding='same'), 
-
+            self.spine,
             tf.keras.layers.Flatten(), 
             tf.keras.layers.Dense(128, activation="relu"), 
             # softmax is applied to the avg of the multiple predictions 
@@ -233,9 +190,29 @@ class Baseline2D(Baseline):
         xb.set_shape([None, 10, IMAGE_SIZE_H, IMAGE_SIZE_W, 3])
 
     def model(self, x):
+        parent_model = super().model
         # transpose to (temporal, batch, h, w, c)
         x = tf.transpose(x, perm=[1, 0, 2, 3, 4])
-        y = tf.map_fn(super().model, x)
+        y = tf.map_fn(parent_model, x)
+
+        # ## TODO: replace with while loop ! 
+        # y = tf.expand_dims(
+        #     parent_model(tf.gather(x, 0)), 0)
+        # i = tf.constant(1, dtype=tf.int32)
+        # cond = lambda i, _: tf.less(i, tf.shape(x)[0])
+        # def body(i, y):
+        #     logits = parent_model(tf.gather(x, i))
+        #     y = tf.concat([y, [logits]], 0)
+        #     return (tf.add(i, 1), y)
+        # _, y = tf.while_loop(cond, body, [i, y], 
+        #     shape_invariants = [i.get_shape(), tf.TensorShape([None, None, self.n_classes])])
+        # # use this to set the shape -- doesn't change anything 
+        # y = tf.reshape(y, (tf.shape(x)[0], tf.shape(x)[1], self.n_classes))
+
+        # y = []
+        # for i in range(x.shape.as_list()[0]):
+        #     y.append(super().model(tf.gather(x, i)))
+        # y = tf.stack(y)
         # transpose back (batch, temporal, n_classes)
         y = tf.transpose(y, perm=[1, 0, 2])
         # average over temporal dimension + softmax (batch, logits)
@@ -464,3 +441,45 @@ class L1Reg(OrthogonalReg):
             return self.reg_constant * norm
         self.dense_reg_method = L1_reg
         self.kernel_reg_method = L1_reg
+
+####### data loading helpers -- not really used anymore 
+
+def mp4_2_numpy(filename):
+    vid = imageio.get_reader(filename, 'ffmpeg')
+    data = np.stack(list(vid.iter_data()))
+    return data 
+
+def py_line2example(line, n_frames):
+    d = line.numpy().decode("utf-8").split(' ')
+    fn, label = '{}{}'.format(PATH2VIDEOS, d[0]), int(d[1])
+    vid = mp4_2_numpy(fn)
+    t, h, w, _ = vid.shape 
+    
+    # sample 10 random frames  -- fps == 24 
+    sampled_frame_idxs = np.linspace(0, t-1, num=n_frames, dtype=np.int32)
+    vid = vid[sampled_frame_idxs]
+
+    if h < IMAGE_SIZE_H or w < IMAGE_SIZE_W: 
+        vid = np.stack([cv2.resize(frame, (IMAGE_SIZE_W, IMAGE_SIZE_H)) for frame in vid])
+    else: 
+        # crop to IMAGE_SIZE x IMAGE_SIZE
+        h_start = (h - IMAGE_SIZE_H) // 2
+        w_start = (w - IMAGE_SIZE_W) // 2
+        vid = vid[:, h_start: h_start + IMAGE_SIZE_H, w_start: w_start + IMAGE_SIZE_W, :]
+    
+    # squeeze
+    if len(vid) == 1: 
+        vid = vid[0]
+    # T, H, W, C
+    # vid = vid.transpose((-1, 1, 2, 0))
+    vid = vid / 255. * 2 - 1
+
+    # one-hot encode label 
+    oh = np.zeros((NUM_CLASSES,))
+    oh[label] = 1 
+
+    return vid, oh
+    
+def line2example(x, n_frames=10):
+    image, label = tf.py_function(py_line2example, [x, n_frames], [tf.float32, tf.int32])
+    return image, label

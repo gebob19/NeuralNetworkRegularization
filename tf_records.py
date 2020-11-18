@@ -164,8 +164,8 @@ def test():
             vid, _, _, shape = sess.run(next_element)
             print(vid.shape)
 
-#%%
-if __name__ == "__main__":
-    create_tfrecords()     
-    test()
+# #%%
+# if __name__ == "__main__":
+#     create_tfrecords()     
+#     test()
 

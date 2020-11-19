@@ -179,12 +179,6 @@ def train(trainer):
     return trainer, W
 
 #%%
-(x_train, y_train), (x_val, y_val), (x_test, y_test) = get_train_test()
-#%%
-x_train.shape
-#%%
-
-#%%
 trial_run = False
 config = {
     'batch_size': 32,

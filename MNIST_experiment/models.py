@@ -8,7 +8,7 @@ init_weights_path = '/home/brennan/672/regularization_project/MNIST_experiment/i
 
 class Baseline():
     def __init__(self, config):
-        self.optimizer = tf.train.GradientDescentOptimizer(1e-2)
+        self.optimizer = tf.train.GradientDescentOptimizer(1e-3)
         self.loss_func = tf.keras.losses.CategoricalCrossentropy(from_logits=True)
         self.is_training = tf.placeholder_with_default(True, shape=())
 

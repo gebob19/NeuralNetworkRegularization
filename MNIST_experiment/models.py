@@ -2,7 +2,8 @@ import tensorflow as tf
 import numpy as np 
 import pathlib
 
-init_weights_path = pathlib.Path.home()/'Documents/gradschool/672/project/regularization_project/MNIST_experiment/init_weights.npy'
+# init_weights_path = pathlib.Path.home()/'Documents/gradschool/672/project/regularization_project/MNIST_experiment/init_weights.npy'
+init_weights_path = '/home/brennan/672/regularization_project/MNIST_experiment/init_weights.npy'
 # init_weights_path = '/content/MNIST_experiment/init_weights.npy'
 
 class Baseline():
@@ -18,7 +19,8 @@ class Baseline():
 
     def get_mlp(self):
         weights = np.load(str(init_weights_path))
-        return tf.keras.layers.Dense(10, kernel_initializer=tf.constant_initializer(weights))
+        return tf.keras.layers.Dense(10, activation='softmax', \
+        kernel_initializer=tf.constant_initializer(weights))
 
     def build_datapipeline(self):
         dataset = tf.data.Dataset.from_tensor_slices((self.x_data, self.y_data))\
@@ -113,6 +115,7 @@ class OrthogonalReg(Baseline):
 
         weights = np.load(str(init_weights_path))
         return tf.keras.layers.Dense(10, \
+            activation='softmax',\
             kernel_regularizer=orthogonal_reg, \
             kernel_initializer=tf.constant_initializer(weights))
 
@@ -128,6 +131,7 @@ class L2Reg(Baseline):
             return self.reg_constant * norm
 
         return tf.keras.layers.Dense(10, \
+            activation='softmax',\
             kernel_initializer=tf.constant_initializer(weights), \
             kernel_regularizer=L2_reg)
 
@@ -143,6 +147,7 @@ class L1Reg(Baseline):
             return self.reg_constant * norm
 
         return tf.keras.layers.Dense(10, \
+            activation='softmax',\
             kernel_initializer=tf.constant_initializer(weights), \
             kernel_regularizer=L1_reg)
 

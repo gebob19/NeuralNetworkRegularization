@@ -14,6 +14,8 @@ import pathlib
 sys.path.append(str(pathlib.Path.home()/'Documents/gradschool/672/project/regularization_project'))
 # for COLAB use 
 sys.path.append('/content/')
+# for VIP use 
+sys.path.append('/home/brennan/672/regularization_project/')
 from writers import NeptuneWriter
 
 print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
@@ -25,8 +27,8 @@ def get_train_test(batch_size=32):
     (x_train, y_train), (x_test, y_test) = tf.keras.datasets.mnist.load_data()
     x_train, x_test = x_train.astype(np.float32), x_test.astype(np.float32)
 
-    # x_train = np.reshape(x_train, (-1, 784)).astype(np.float32)
-    # x_test = np.reshape(x_test, (-1, 784)).astype(np.float32)
+    x_train = np.reshape(x_train, (-1, 784)).astype(np.float32) / 255.
+    x_test = np.reshape(x_test, (-1, 784)).astype(np.float32) / 255.
 
     # one-hot encoding 
     oh = np.zeros((y_train.size, 10))
@@ -100,8 +102,6 @@ def train(trainer):
     with tf.compat.v1.Session() as sess: 
         best_sess = sess
         best_score = 0. 
-
-        print(tf.global_variables())
 
         import time
         start = time.time()
@@ -185,7 +185,7 @@ x_train.shape
 #%%
 
 #%%
-trial_run = True 
+trial_run = False
 config = {
     'batch_size': 32,
     'epochs': 200 if not trial_run else 1,

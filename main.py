@@ -94,10 +94,11 @@ def train(trainer):
                 n_correct = tf.reduce_sum(tf.cast(
                     tf.equal(tf.argmax(yb, 1), tf.argmax(logits, 1)),
                         tf.float32))
-                return loss, n_examples, n_correct
+                n_top_k = tf.math.in_top_k(tf.cast(logits, tf.float32), tf.argmax(yb, -1), 5)
+                return loss, n_examples, n_correct, n_top_k
 
             tower_grads = []
-            example_counter, correct_counter = [], []
+            example_counter, correct_counter, top_k_counter = [], [], []
             dependencies = []
             for i in range(N_GPUS):
                 with tf.device('/gpu:{}'.format(i)):
@@ -105,7 +106,7 @@ def train(trainer):
                         xb, yb = trainer.dataset_iterator.get_next()
                         trainer.set_input_shape(xb)
 
-                        loss, n_examples, n_correct = compute_loss_acc(xb, yb)
+                        loss, n_examples, n_correct, n_top_k = compute_loss_acc(xb, yb)
                         grads = trainer.optimizer.compute_gradients(loss)
 
                         tower_grads.append(grads)
@@ -113,8 +114,9 @@ def train(trainer):
 
                         example_counter.append(n_examples)
                         correct_counter.append(n_correct)
+                        top_k_counter.append(n_top_k)
 
-                        dependencies += [loss, n_examples, n_correct]
+                        dependencies += [loss, n_examples, n_correct, n_top_k]
 
             grads = average_gradients(tower_grads)
             apply_gradient_op = trainer.optimizer.apply_gradients(grads)
@@ -123,6 +125,7 @@ def train(trainer):
             with tf.control_dependencies(dependencies):
                 train_op = tf.group(apply_gradient_op)
                 num_correct = tf.reduce_sum(correct_counter)
+                num_correct_k = tf.reduce_sum(top_k_counter)
                 num_examples = tf.reduce_sum(example_counter)
                 avg_loss = tf.reduce_mean(loss_tensors)
                 
@@ -156,8 +159,10 @@ def train(trainer):
                 for _ in tqdm(inf()):
                     if multi_gpu: 
                         ## RUN SESS WITH MULTI-GPU VALUES 
-                        _, loss_value, n_correct_value, n_examples_value\
-                         = sess.run([train_op, avg_loss, num_correct, num_examples], \
+                        _, loss_value, n_correct_value, n_examples_value,\
+                            n_correct_k_value\
+                         = sess.run([train_op, avg_loss, num_correct, num_correct_k, \
+                             num_examples], \
                                     feed_dict={trainer.handle_flag: train_handle_value,
                                     trainer.is_training: True})
                         total += n_examples_value
@@ -180,6 +185,7 @@ def train(trainer):
                 metrics['train_acc'] = [sess.run(trainer.acc)]
             else: 
                 metrics['train_acc'] = [total_correct / total]
+                metrics['train_top_5_acc'] = [n_correct_k_value / total]
 
             try: 
                 sess.run(trainer.acc_initializer) # reset accuracy metric

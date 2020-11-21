@@ -70,7 +70,6 @@ def train(trainer):
                     _, loss, _ = \
                         sess.run([trainer.train_op, trainer.loss,\
                             trainer.acc_op])  
-                    print(loss)
                     metrics['train_loss'].append(loss)
                     if trial_run: break 
             except tf.errors.OutOfRangeError: pass 
@@ -131,8 +130,6 @@ def train(trainer):
     return trainer
 
 ##%%
-
-# %%
 trial_run = False
 config = {
     'batch_size': 32 if not trial_run else 2,

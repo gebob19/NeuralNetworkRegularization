@@ -2,7 +2,7 @@
 import tensorflow.compat.v1 as tf 
 import numpy as np 
 from writers import NeptuneWriter
-from models import Baseline
+from models import *
 
 #%%
 def get_train_test():
@@ -47,7 +47,7 @@ def mean_over_dict(custom_metrics):
 #%%
 def train(trainer):
     # for early stopping 
-    require_improvement = 20
+    require_improvement = 10
     last_improvement = 0 
     stop = False 
 
@@ -129,8 +129,8 @@ def train(trainer):
 
     return trainer
 
-##%%
-trial_run = False
+#%%
+trial_run = True
 config = {
     'batch_size': 32 if not trial_run else 2,
     'epochs': 200 if not trial_run else 1,
@@ -140,8 +140,74 @@ config = {
 
 (x_train, y_train), (x_val, y_val), (x_test, y_test) = get_train_test()
 
-trainers = [Baseline]
-configs = [config]
+# default configs 
+trainers = [Baseline, L1Reg, L2Reg, DropoutReg, SpectralReg, OrthogonalReg]
+configs = [config.copy(), config.copy(), config.copy(), config.copy(), config.copy(), config.copy()]
+
+# variations of regularization/dropout parameters 
+new_trainers, new_configs = [], []
+for config, trainer_class in zip(configs, trainers):
+    if trainer_class.__name__ == 'Baseline': 
+        continue
+
+    if trainer_class.__name__ == 'OrthogonalReg':
+        new_confg = config.copy()
+        new_confg['reg_constant'] = 0.1
+        new_configs.append(new_confg)
+        new_trainers.append(trainer_class)
+        
+        new_confg = config.copy()
+        new_confg['reg_constant'] = 0.001
+        new_configs.append(new_confg)
+        new_trainers.append(trainer_class)
+        
+        new_confg = config.copy()
+        new_confg['reg_constant'] = 0.0001
+        new_configs.append(new_confg)
+        new_trainers.append(trainer_class)
+
+    elif trainer_class.__name__ != 'DropoutReg':
+        new_confg = config.copy()
+        new_confg['reg_constant'] *= 10
+        new_configs.append(new_confg)
+        new_trainers.append(trainer_class)
+
+        new_confg = config.copy()
+        new_confg['reg_constant'] *= 100
+        new_configs.append(new_confg)
+        new_trainers.append(trainer_class)
+
+        new_confg = config.copy()
+        new_confg['reg_constant'] /= 10
+        new_configs.append(new_confg)
+        new_trainers.append(trainer_class)
+
+        new_confg = config.copy()
+        new_confg['reg_constant'] /= 100
+        new_configs.append(new_confg)
+        new_trainers.append(trainer_class)
+    else: 
+        new_confg = config.copy()
+        new_confg['dropout_constant'] = 0.5
+        new_configs.append(new_confg)
+        new_trainers.append(trainer_class)
+
+        new_confg = config.copy()
+        new_confg['dropout_constant'] = 0.8
+        new_configs.append(new_confg)
+        new_trainers.append(trainer_class)
+
+        new_confg = config.copy()
+        new_confg['dropout_constant'] = 0.1
+        new_configs.append(new_confg)
+        new_trainers.append(trainer_class)
+        
+trainers += new_trainers
+configs += new_configs
+
+if trial_run:
+    trainers = [Baseline]
+    configs = [config]
 
 writer = NeptuneWriter('gebob19/672-cifar')
 

@@ -22,24 +22,24 @@ for data, exp in zip(best_exps_values, best_exps):
     if name == 'DropoutReg':
         l = exp.get_parameters()['dropout_constant']
     if name == 'Baseline':
-        l = ''
+        l = 'n/a'
     test_acc = data['test_acc'].values[-1]
     train_acc = data['train_acc'].values[-2]
     loss = data['loss'].values[-2]
     largest_singular_value = data['sum_singular_value'].values[-2]
-    w_mean = data['w_mean'].values[-2]
+    w_norm = data['w_norm'].values[-2]
 
-    print('{}: {:.2f} {:.2f} {} {:.2f} {}'.format(name, test_acc, train_acc, l, largest_singular_value, w_mean)) 
+    print('{}: {:.2f} {:.2f} {} {:.2f} {:.2f}'.format(name, test_acc, train_acc, l, largest_singular_value, w_norm)) 
 
 #%%
-# remove dropout for better visualizations 
-dropout_index = exp_names.index('DropoutReg')
-del best_exps[dropout_index]
-del best_exps_values[dropout_index]
+# # remove dropout for better visualizations 
+# dropout_index = exp_names.index('DropoutReg')
+# del best_exps[dropout_index]
+# del best_exps_values[dropout_index]
 
 #%%
 import pathlib 
-chart_dir = pathlib.Path()/'charts/without-dropout/'
+chart_dir = pathlib.Path()/'charts/'
 chart_dir.mkdir(exist_ok=True, parents=True)
 
 # %%

@@ -13,11 +13,11 @@ def get_train_test(batch_size=32):
 
     # one-hot encoding 
     oh = np.zeros((y_train.size, 10))
-    oh[np.arange(y_train.size), y_train] = 1 
+    oh[np.arange(y_train.size), y_train[:, 0]] = 1 
     y_train = oh
 
     oh = np.zeros((y_test.size, 10))
-    oh[np.arange(y_test.size), y_test] = 1 
+    oh[np.arange(y_test.size), y_test[:, 0]] = 1 
     y_test = oh
 
     # Reserve 10,000 samples for validation.
@@ -196,8 +196,8 @@ def train(trainer):
 
     return trainer
 
-##%%
-# (x_train, y_train), (x_val, y_val), (x_test, y_test) = get_train_test()
+#%%
+(x_train, y_train), (x_val, y_val), (x_test, y_test) = get_train_test()
 
 # %%
 trial_run = True 

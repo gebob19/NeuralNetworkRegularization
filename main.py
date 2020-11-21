@@ -47,7 +47,7 @@ def mean_over_dict(custom_metrics):
 #%%
 def train(trainer):
     # for early stopping 
-    require_improvement = 10
+    require_improvement = 15
     last_improvement = 0 
     stop = False 
 
@@ -132,17 +132,28 @@ def train(trainer):
 #%%
 trial_run = True
 config = {
-    'batch_size': 32 if not trial_run else 2,
+    'batch_size': 64 if not trial_run else 2,
     'epochs': 200 if not trial_run else 1,
     'reg_constant': 0.01,
     'dropout_constant': 0.3,
+    'kernel_regularization': True, 
+    'dense_regularization': True, 
 }
 
 (x_train, y_train), (x_val, y_val), (x_test, y_test) = get_train_test()
 
 # default configs 
-trainers = [Baseline, L1Reg, L2Reg, DropoutReg, SpectralReg, OrthogonalReg]
+trainers = [Baseline, Dropout, SpectralReg, OrthogonalReg, L2Reg, L1Reg]
 configs = [config.copy(), config.copy(), config.copy(), config.copy(), config.copy(), config.copy()]
+
+# include kernel + dense regularization 
+d_config = config.copy()
+d_config['kernel_regularization'] = False 
+k_config = config.copy()
+k_config['dense_regularization'] = False 
+
+new_trainers = []
+new_configs = []
 
 # variations of regularization/dropout parameters 
 new_trainers, new_configs = [], []
@@ -166,7 +177,23 @@ for config, trainer_class in zip(configs, trainers):
         new_configs.append(new_confg)
         new_trainers.append(trainer_class)
 
-    elif trainer_class.__name__ != 'DropoutReg':
+    elif trainer_class.__name__ == 'Dropout':
+        new_confg = config.copy()
+        new_confg['dropout_constant'] = 0.5
+        new_configs.append(new_confg)
+        new_trainers.append(trainer_class)
+
+        new_confg = config.copy()
+        new_confg['dropout_constant'] = 0.8
+        new_configs.append(new_confg)
+        new_trainers.append(trainer_class)
+
+        new_confg = config.copy()
+        new_confg['dropout_constant'] = 0.1
+        new_configs.append(new_confg)
+        new_trainers.append(trainer_class)
+
+    else: 
         new_confg = config.copy()
         new_confg['reg_constant'] *= 10
         new_configs.append(new_confg)
@@ -182,27 +209,11 @@ for config, trainer_class in zip(configs, trainers):
         new_configs.append(new_confg)
         new_trainers.append(trainer_class)
         
-    else: 
-        new_confg = config.copy()
-        new_confg['dropout_constant'] = 0.5
-        new_configs.append(new_confg)
-        new_trainers.append(trainer_class)
-
-        new_confg = config.copy()
-        new_confg['dropout_constant'] = 0.8
-        new_configs.append(new_confg)
-        new_trainers.append(trainer_class)
-
-        new_confg = config.copy()
-        new_confg['dropout_constant'] = 0.1
-        new_configs.append(new_confg)
-        new_trainers.append(trainer_class)
-        
 trainers += new_trainers
 configs += new_configs
 
 if trial_run:
-    trainers = [Baseline]
+    trainers = [SpectralReg]
     configs = [config]
 
 writer = NeptuneWriter('gebob19/672-cifar')
@@ -216,3 +227,5 @@ for config, trainer_class in zip(configs, trainers):
     full_trainer = train(trainer_class(config))
     
     writer.fin()
+
+print('completed!')

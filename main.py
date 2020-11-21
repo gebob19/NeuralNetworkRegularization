@@ -173,19 +173,15 @@ for config, trainer_class in zip(configs, trainers):
         new_trainers.append(trainer_class)
 
         new_confg = config.copy()
-        new_confg['reg_constant'] *= 100
-        new_configs.append(new_confg)
-        new_trainers.append(trainer_class)
-
-        new_confg = config.copy()
         new_confg['reg_constant'] /= 10
         new_configs.append(new_confg)
         new_trainers.append(trainer_class)
-
+        
         new_confg = config.copy()
         new_confg['reg_constant'] /= 100
         new_configs.append(new_confg)
         new_trainers.append(trainer_class)
+        
     else: 
         new_confg = config.copy()
         new_confg['dropout_constant'] = 0.5
@@ -220,7 +216,3 @@ for config, trainer_class in zip(configs, trainers):
     full_trainer = train(trainer_class(config))
     
     writer.fin()
-
-# %%
-
-# %%

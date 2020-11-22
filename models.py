@@ -171,9 +171,12 @@ class OrthogonalReg(Baseline):
 
     def set_reg_method(self, config):
         def orthogonal_reg(W):
-            # W = tf.reshape(W, [-1, W.shape[-1]]) # flatten using same means as spectral 
             orthog_term = tf.math.reduce_sum(tf.abs(W @ tf.transpose(W) - tf.eye(W.shape.as_list()[0])))
             return self.reg_constant * orthog_term
+
+        def orthogonal_flat_kernel_reg(W):
+            W = tf.reshape(W, [-1, W.shape[-1]]) # flatten using same means as spectral 
+            return orthogonal_reg(W)
 
         def orthogonal_kernel_reg(W):
             k = W.shape.as_list()[0]
@@ -190,7 +193,7 @@ class OrthogonalReg(Baseline):
             return self.reg_constant * orthog_term
 
         self.dense_reg_method = orthogonal_reg if config['dense_regularization'] else None
-        self.kernel_reg_method = orthogonal_kernel_reg if config['kernel_regularization'] else None
+        self.kernel_reg_method = orthogonal_flat_kernel_reg if config['kernel_regularization'] else None
 
     def get_layers(self, config):
         return [
@@ -218,7 +221,7 @@ class L2Reg(OrthogonalReg):
     def __init__(self, config):
         super().__init__(config)
 
-    def set_reg_method(self):
+    def set_reg_method(self, config):
         def L2_reg(W):
             norm = tf.norm(W, 2)
             return self.reg_constant * norm
@@ -229,7 +232,7 @@ class L1Reg(OrthogonalReg):
     def __init__(self, config):
         super().__init__(config)
 
-    def set_reg_method(self):
+    def set_reg_method(self, config):
         def L1_reg(W):
             norm = tf.norm(W, 1)
             return self.reg_constant * norm

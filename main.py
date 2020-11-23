@@ -4,6 +4,7 @@ import numpy as np
 from writers import NeptuneWriter
 from models import *
 
+
 #%%
 def get_train_test():
     (x_train, y_train), (x_test, y_test) = tf.keras.datasets.cifar10.load_data()
@@ -130,79 +131,91 @@ def train(trainer):
     return trainer
 
 #%%
-trial_run = False
+trial_run = True
 config = {
-    'batch_size': 64 if not trial_run else 2,
+    'batch_size': 32 if not trial_run else 2,
     'epochs': 200 if not trial_run else 1,
     'reg_constant': 0.01,
     'dropout_constant': 0.3,
-    'kernel_regularization': True, 
     'dense_regularization': True, 
+    'kernel_regularization': True 
 }
 
-print('Getting Data...')
 (x_train, y_train), (x_val, y_val), (x_test, y_test) = get_train_test()
 
-# trainers = [Baseline]
-# configs = [config.copy()]
+# default configs 
+trainers = [Baseline, L1Reg, L2Reg, DropoutReg, SpectralReg, OrthogonalReg]
+configs = [config.copy(), config.copy(), config.copy(), config.copy(), config.copy(), config.copy()]
 
-print('Setting up configs...')
-trainers = []
-configs = []
+# variations of regularization/dropout parameters 
+new_trainers, new_configs = [], []
+for config, trainer_class in zip(configs, trainers):
+    if trainer_class.__name__ == 'Baseline': 
+        continue
 
-# dropout_config1 = config.copy()
-# dropout_config1['dropout_constant'] = 0.3
-dropout_config2 = config.copy()
-dropout_config2['dropout_constant'] = 0.5
-trainers += [Dropout] 
-configs += [dropout_config2]
+    if trainer_class.__name__ == 'OrthogonalReg':
+        new_confg = config.copy()
+        new_confg['reg_constant'] = 0.1
+        new_configs.append(new_confg)
+        new_trainers.append(trainer_class)
+        
+        new_confg = config.copy()
+        new_confg['reg_constant'] = 0.001
+        new_configs.append(new_confg)
+        new_trainers.append(trainer_class)
+        
+        new_confg = config.copy()
+        new_confg['reg_constant'] = 0.0001
+        new_configs.append(new_confg)
+        new_trainers.append(trainer_class)
 
-orthog_config = config.copy()
-orthog_config['reg_constant'] = 0.0001
-trainers.append(OrthogonalReg)
-configs.append(orthog_config)
+    elif trainer_class.__name__ != 'DropoutReg':
+        new_confg = config.copy()
+        new_confg['reg_constant'] *= 10
+        new_configs.append(new_confg)
+        new_trainers.append(trainer_class)
 
-l1_config = config.copy()
-l1_config['reg_constant'] = 1e-4
-l2_config = config.copy()
-l2_config['reg_constant'] = 1e-3
+        new_confg = config.copy()
+        new_confg['reg_constant'] /= 10
+        new_configs.append(new_confg)
+        new_trainers.append(trainer_class)
+        
+        new_confg = config.copy()
+        new_confg['reg_constant'] /= 100
+        new_configs.append(new_confg)
+        new_trainers.append(trainer_class)
+        
+    else: 
+        new_confg = config.copy()
+        new_confg['dropout_constant'] = 0.5
+        new_configs.append(new_confg)
+        new_trainers.append(trainer_class)
 
-spectral_conf = config.copy()
-spectral_conf['reg_constant'] = 0.01
+        new_confg = config.copy()
+        new_confg['dropout_constant'] = 0.8
+        new_configs.append(new_confg)
+        new_trainers.append(trainer_class)
 
-trainers += [L1Reg, L2Reg, SpectralReg]
-configs += [l1_config, l2_config, spectral_conf]
-
-# include kernel + dense regularization 
-new_trainers = []
-new_configs = []
-for trainer_class, conf in zip(trainers, configs):
-    if trainer_class.__name__ not in ['Dropout', 'Baseline']:    
-        d_config = conf.copy()
-        k_config = conf.copy()
-        d_config['kernel_regularization'] = False 
-        k_config['dense_regularization'] = False 
-
-        new_trainers += [trainer_class] * 2
-        new_configs += [d_config, k_config]
+        new_confg = config.copy()
+        new_confg['dropout_constant'] = 0.1
+        new_configs.append(new_confg)
+        new_trainers.append(trainer_class)
+        
 trainers += new_trainers
 configs += new_configs
 
-# if trial_run:
-trainers = [OrthogonalReg]
-configs = [config]
+if trial_run:
+    trainers = [Baseline]
+    configs = [config]
 
 writer = NeptuneWriter('gebob19/672-cifar')
 
-print('training...')
 for config, trainer_class in zip(configs, trainers): 
     config['experiment_name'] = trainer_class.__name__
     if not trial_run:
-        writer.start(config, tags=['large_model', 'flat_orthogonal'])
+        writer.start(config)
 
     tf.reset_default_graph()
     full_trainer = train(trainer_class(config))
     
     writer.fin()
-
-print('completed!')

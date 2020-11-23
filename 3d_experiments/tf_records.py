@@ -28,40 +28,57 @@ else:
     DATAFILE_PATH = '/Users/brennangebotys/Documents/gradschool/672/project/regularization_project/top-k-glosses/{}/'.format(TOP_N)
 
 # %%
-##### video reading functions 
-def mp4_2_numpy(filename):
-    vid = imageio.get_reader(filename, 'ffmpeg')
-    data = np.stack(list(vid.iter_data()))
-    return data 
-
-###### tf records functions 
+# TFRecords helpers 
 def _int64_feature(value):
     return tf.train.Feature(int64_list=tf.train.Int64List(value=[value]))
-
 def _bytes_feature(value):
     return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
 
+def mp4_2_numpy(filename):
+    """Reads a video and returns its contents in matrix form.
+
+    Args:
+        filename (str): a path to a video
+
+    Returns:
+        np.array(): matrix contents of the video 
+    """
+    vid = imageio.get_reader(filename, 'ffmpeg')
+    # read all of video frames resulting in a (T, H, W, C) matrix 
+    data = np.stack(list(vid.iter_data()))
+    return data 
+
 def line2example(line):
-    d = line.split(' ')
-    fn, label = '{}{}'.format(PATH2VIDEOS, d[0]), int(d[1])
-    
-    # read file for shape 
-    data = mp4_2_numpy(fn)
-    # sample 10 random frames  -- fps == 24 
-    t, h, w, c = data.shape
-    sampled_frame_idxs = np.linspace(0, t-1, num=N_FRAMES, dtype=np.int32)
-    data = data[sampled_frame_idxs]
+    """Reads a line from the datafile and returns an
+    associated TFRecords example containing the encoded data. 
+
+    Args:
+        line (str): a line from the datafile 
+            (formatted as {filepath} {label})
+
+    Returns:
+        tf.train.SequenceExample: resulting TFRecords example 
+    """
+    # extract information on dataexample 
+    fn, label = line.split(' ')
+    fn, label = '{}{}'.format(PATH2VIDEOS, fn), int(label)
+
+    # read matrix data and save its shape 
+    data = mp4file_2_numpy(fn)
     t, h, w, c = data.shape
 
-    # save video as list of encoded frames 
+    # save video as list of encoded frames using tensorflow's operation 
     img_bytes = [tf.image.encode_jpeg(d, format='rgb') for d in data]
     with tf.Session() as sess: 
         img_bytes = sess.run(img_bytes)
-    
+        
     sequence_dict = {}
+    # create a feature for each encoded frame
     img_feats = [tf.train.Feature(bytes_list=tf.train.BytesList(value=[imgb])) for imgb in img_bytes]
-    sequence_dict['data'] = tf.train.FeatureList(feature=img_feats)
+    # save video frames as a FeatureList
+    sequence_dict['video_frames'] = tf.train.FeatureList(feature=img_feats)
 
+    # also store associated meta-data
     context_dict = {}
     context_dict['filename'] = _bytes_feature(fn.encode('utf-8'))
     context_dict['label'] = _int64_feature(label)
@@ -70,25 +87,44 @@ def line2example(line):
     context_dict['width'] = _int64_feature(w)
     context_dict['depth'] = _int64_feature(c)
 
+    # combine list + context to create TFRecords example 
     sequence_context = tf.train.Features(feature=context_dict)
     sequence_list = tf.train.FeatureLists(feature_list=sequence_dict)
-
     example = tf.train.SequenceExample(context=sequence_context, feature_lists=sequence_list)
 
     return example
 
 #%%    
-def create_tfrecords():
-    RECORDS_SAVE_PATH = pathlib.Path('data/top-{}/'.format(TOP_N))
-    RECORDS_SAVE_PATH.mkdir(exist_ok=True, parents=True)
+save_path = 'data/top-{}/'.format(TOP_N)
+datafile_path = DATAFILE_PATH
 
+# """Creates TFRecords for the video dataset.
+
+    # Args:
+    #     save_path (str): where to save .tfrecord files
+    # """
+
+def create_tfrecords(datafile_path, save_path):
+    """Creates a TFRecords dataset from video files.
+
+    Args:
+        datafile_path (str): a path to the formatted datafiles (includes train.txt, etc.)
+        save_path (str): where to save the .tfrecord files 
+    """
+
+    save_path = pathlib.Path(save_path)
+    save_path.mkdir(exist_ok=True, parents=True)
+
+    # create a TFRecord for each datasplit 
     for dset_name in ['train.txt', 'test.txt', 'val.txt']:
-        with open(DATAFILE_PATH + dset_name, 'r') as f:
+        # read the lines of the datafile
+        with open(datafile_path + dset_name, 'r') as f:
             lines = f.readlines()
 
-        record_file = str(RECORDS_SAVE_PATH/'{}.tfrecord'.format(dset_name[:-4]))
+        # write each example to a {split}.tfrecord (train.tfrecord, etc.) 
+        record_file = str(save_path/'{}.tfrecord'.format(dset_name[:-4]))
         with tf.python_io.TFRecordWriter(record_file) as writer: 
-            for line in tqdm(lines[:10]): 
+            for line in tqdm(lines): 
                 example = line2example(line)
                 writer.write(example.SerializeToString())
 

@@ -45,7 +45,7 @@ for data, exp in zip(best_exps_values, best_exps):
 
 #%%
 import pathlib 
-chart_dir = pathlib.Path()/'charts-cifar/'
+chart_dir = pathlib.Path()/'data/charts-cifar/'
 chart_dir.mkdir(exist_ok=True, parents=True)
 
 # %%

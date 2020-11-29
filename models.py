@@ -122,13 +122,9 @@ class SpectralReg(Baseline):
         logits = self.model(xb)
         self.loss = self.loss_func(yb, logits)
 
-        self.variables = [(v, i) for i, v in enumerate(tf.trainable_variables()) if 'kernel' in v.name]
+        self.variables = [(v, i) for v, i in self.variables if 'dense' in v.name]
         # dont apply to last dense layer 
         self.variables.pop(-1)
-        if not self.config['kernel_regularization']:
-            self.variables = [(v, i) for v, i in self.variables if not 'conv2d' in v.name]
-        if not self.config['dense_regularization']:
-            self.variables = [(v, i) for v, i in self.variables if not 'dense' in v.name]
         self.vs = [tf.random.normal((v.shape.as_list()[-1], 1), mean=0., stddev=1.) for v, _ in self.variables]
 
         assert len(self.variables) > 0

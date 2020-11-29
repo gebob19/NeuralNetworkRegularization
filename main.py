@@ -135,7 +135,7 @@ trial_run = True
 config = {
     'batch_size': 32 if not trial_run else 2,
     'epochs': 200 if not trial_run else 1,
-    'reg_constant': 0.00001,
+    'reg_constant': 0.001,
     'dropout_constant': 0.3,
     'dense_regularization': True, 
     'kernel_regularization': True 
@@ -154,8 +154,8 @@ dropout_config1 = config.copy()
 dropout_config1['dropout_constant'] = 0.3
 dropout_config2 = config.copy()
 dropout_config2['dropout_constant'] = 0.5
-trainers += [Dropout] 
-configs += [dropout_config2]
+trainers += [Dropout, Dropout] 
+configs += [dropout_config1, dropout_config2]
 
 # orthog_config = config.copy()
 # orthog_config['reg_constant'] = 0.0001
@@ -167,8 +167,10 @@ configs += [dropout_config2]
 # l2_config = config.copy()
 # l2_config['reg_constant'] = 1e-3
 
-# spectral_conf = config.copy()
-# spectral_conf['reg_constant'] = 0.01
+spectral_conf = config.copy()
+spectral_conf['reg_constant'] = 0.01
+trainers += [SpectralReg]
+configs += [spectral_conf]
 
 # trainers += [L1Reg, L2Reg, SpectralReg]
 # configs += [l1_config, l2_config, spectral_conf]

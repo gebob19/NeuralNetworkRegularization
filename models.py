@@ -76,6 +76,7 @@ class Baseline():
 class Dropout(Baseline):
     def __init__(self, config):
         self.flatten = tf.keras.layers.Flatten()
+        self.dropout = tf.keras.layers.Dropout(config['dropout_constant'])
         self.dense1 = tf.keras.layers.Dense(128, activation="relu")
         self.dense2 = tf.keras.layers.Dense(256, activation="relu")
         self.dense3 = tf.keras.layers.Dense(10, activation='softmax')
@@ -101,7 +102,7 @@ class Dropout(Baseline):
     def model(self, x):
         for layer in self.layers: 
             x = layer(x)
-        x = dropout(x, training=self.is_training)
+        x = self.dropout(x, training=self.is_training)
         
         x = self.flatten(x)
         x = self.dense1(x)
@@ -122,7 +123,7 @@ class SpectralReg(Baseline):
         logits = self.model(xb)
         self.loss = self.loss_func(yb, logits)
 
-        self.variables = [(v, i) for v, i in self.variables if 'dense' in v.name]
+        self.variables = [(v, i) for i, v in enumerate(tf.trainable_variables()) if 'dense' in v.name]
         # dont apply to last dense layer 
         self.variables.pop(-1)
         self.vs = [tf.random.normal((v.shape.as_list()[-1], 1), mean=0., stddev=1.) for v, _ in self.variables]

@@ -77,40 +77,36 @@ class Dropout(Baseline):
     def __init__(self, config):
         self.flatten = tf.keras.layers.Flatten()
         self.dense1 = tf.keras.layers.Dense(128, activation="relu")
-        self.dense1 = tf.keras.layers.Dense(256, activation="relu")
-        self.dense2 = tf.keras.layers.Dense(10, activation='softmax')
+        self.dense2 = tf.keras.layers.Dense(256, activation="relu")
+        self.dense3 = tf.keras.layers.Dense(10, activation='softmax')
         super().__init__(config)
 
     def get_layers(self, config): 
         return [
-            ([tf.keras.layers.Conv2D(64, 7, strides=(2, 2), activation="relu", padding='same'),],
-            tf.keras.layers.Dropout(config['dropout_constant'])),
+            tf.keras.layers.Conv2D(64, 7, strides=(2, 2), activation="relu", padding='same'),
             
-            ([tf.keras.layers.Conv2D(128, 3, activation="relu", padding='same'), 
+            tf.keras.layers.Conv2D(128, 3, activation="relu", padding='same'), 
             tf.keras.layers.Conv2D(128, 3, activation="relu", padding='same'),
-            tf.keras.layers.MaxPool2D(2, padding='same')],
-            tf.keras.layers.Dropout(config['dropout_constant'])),
+            tf.keras.layers.MaxPool2D(2, padding='same'),
 
-            ([tf.keras.layers.Conv2D(256, 3, activation="relu", padding='same'),
             tf.keras.layers.Conv2D(256, 3, activation="relu", padding='same'),
-            tf.keras.layers.MaxPool2D(2, padding='same')], 
-            tf.keras.layers.Dropout(config['dropout_constant'])),
-            
-            ([tf.keras.layers.Conv2D(512, 3, activation="relu", padding='same'),
+            tf.keras.layers.Conv2D(256, 3, activation="relu", padding='same'),
+            tf.keras.layers.MaxPool2D(2, padding='same'), 
+
             tf.keras.layers.Conv2D(512, 3, activation="relu", padding='same'),
-            tf.keras.layers.MaxPool2D(2, padding='same')], 
-            tf.keras.layers.Dropout(config['dropout_constant'])),
+            tf.keras.layers.Conv2D(512, 3, activation="relu", padding='same'),
+            tf.keras.layers.MaxPool2D(2, padding='same'), 
         ]
     
     def model(self, x):
-        for block, dropout in self.layers: 
-            for layer in block: 
-                x = layer(x)
-            x = dropout(x, training=self.is_training)
+        for layer in self.layers: 
+            x = layer(x)
+        x = dropout(x, training=self.is_training)
         
         x = self.flatten(x)
         x = self.dense1(x)
         x = self.dense2(x)
+        x = self.dense3(x)
         return x 
 
 class SpectralReg(Baseline):
@@ -126,13 +122,9 @@ class SpectralReg(Baseline):
         logits = self.model(xb)
         self.loss = self.loss_func(yb, logits)
 
-        self.variables = [(v, i) for i, v in enumerate(tf.trainable_variables()) if 'kernel' in v.name]
+        self.variables = [(v, i) for v, i in self.variables if 'dense' in v.name]
         # dont apply to last dense layer 
         self.variables.pop(-1)
-        if not self.config['kernel_regularization']:
-            self.variables = [(v, i) for v, i in self.variables if not 'conv2d' in v.name]
-        if not self.config['dense_regularization']:
-            self.variables = [(v, i) for v, i in self.variables if not 'dense' in v.name]
         self.vs = [tf.random.normal((v.shape.as_list()[-1], 1), mean=0., stddev=1.) for v, _ in self.variables]
 
         assert len(self.variables) > 0

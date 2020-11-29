@@ -42,7 +42,7 @@ for data, exp in zip(best_exps_values, best_exps):
 
     # print('{}: {:.2f} {:.2f} {} {:.2f} {:.2f}'.format(name, test_acc, train_acc, l, largest_singular_value, w_norm)) 
 
-    print('{}: {:.3f} {:.3f} {} {}'.format(name, test_acc, train_acc, kreg, dreg)) 
+    print('{}: {:.3f} {:.3f} {} {} {}'.format(name, test_acc, train_acc, l, kreg, dreg)) 
 
 #%%
 import pathlib 

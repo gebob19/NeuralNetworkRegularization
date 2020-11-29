@@ -134,7 +134,7 @@ trial_run = False
 config = {
     'batch_size': 64 if not trial_run else 2,
     'epochs': 200 if not trial_run else 1,
-    'reg_constant': 0.01,
+    'reg_constant': 0.00001,
     'dropout_constant': 0.3,
     'kernel_regularization': True, 
     'dense_regularization': True, 
@@ -150,47 +150,47 @@ print('Setting up configs...')
 trainers = []
 configs = []
 
-# dropout_config1 = config.copy()
-# dropout_config1['dropout_constant'] = 0.3
+dropout_config1 = config.copy()
+dropout_config1['dropout_constant'] = 0.3
 dropout_config2 = config.copy()
 dropout_config2['dropout_constant'] = 0.5
 trainers += [Dropout] 
 configs += [dropout_config2]
 
-orthog_config = config.copy()
-orthog_config['reg_constant'] = 0.0001
-trainers.append(OrthogonalReg)
-configs.append(orthog_config)
+# orthog_config = config.copy()
+# orthog_config['reg_constant'] = 0.0001
+# trainers.append(OrthogonalReg)
+# configs.append(orthog_config)
 
-l1_config = config.copy()
-l1_config['reg_constant'] = 1e-4
-l2_config = config.copy()
-l2_config['reg_constant'] = 1e-3
+# l1_config = config.copy()
+# l1_config['reg_constant'] = 1e-4
+# l2_config = config.copy()
+# l2_config['reg_constant'] = 1e-3
 
-spectral_conf = config.copy()
-spectral_conf['reg_constant'] = 0.01
+# spectral_conf = config.copy()
+# spectral_conf['reg_constant'] = 0.01
 
-trainers += [L1Reg, L2Reg, SpectralReg]
-configs += [l1_config, l2_config, spectral_conf]
+# trainers += [L1Reg, L2Reg, SpectralReg]
+# configs += [l1_config, l2_config, spectral_conf]
 
-# include kernel + dense regularization 
-new_trainers = []
-new_configs = []
-for trainer_class, conf in zip(trainers, configs):
-    if trainer_class.__name__ not in ['Dropout', 'Baseline']:    
-        d_config = conf.copy()
-        k_config = conf.copy()
-        d_config['kernel_regularization'] = False 
-        k_config['dense_regularization'] = False 
+# # include kernel + dense regularization 
+# new_trainers = []
+# new_configs = []
+# for trainer_class, conf in zip(trainers, configs):
+#     if trainer_class.__name__ not in ['Dropout', 'Baseline']:    
+#         d_config = conf.copy()
+#         k_config = conf.copy()
+#         d_config['kernel_regularization'] = False 
+#         k_config['dense_regularization'] = False 
 
-        new_trainers += [trainer_class] * 2
-        new_configs += [d_config, k_config]
-trainers += new_trainers
-configs += new_configs
+#         new_trainers += [trainer_class] * 2
+#         new_configs += [d_config, k_config]
+# trainers += new_trainers
+# configs += new_configs
 
-# if trial_run:
-trainers = [OrthogonalReg]
-configs = [config]
+# # if trial_run:
+# trainers = [OrthogonalReg]
+# configs = [config]
 
 writer = NeptuneWriter('gebob19/672-cifar')
 

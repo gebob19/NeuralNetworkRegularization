@@ -179,17 +179,18 @@ class OrthogonalReg(Baseline):
             return orthogonal_reg(W)
 
         def orthogonal_kernel_reg(W):
-            k = W.shape.as_list()[0]
-            I = np.zeros((k, k))
-            I[k // 2, k // 2] = 1
-            I = tf.constant(I, dtype=tf.float32)
-            tf_2deye = tf.transpose(tf.stack([tf.stack([I] * W.shape.as_list()[-2])] * W.shape.as_list()[-1]), perm=[2, 3, 1, 0])
+            # k = W.shape.as_list()[0]
+            # I = np.zeros((k, k))
+            # I[k // 2, k // 2] = 1
+            # I = tf.constant(I, dtype=tf.float32)
+            # tf_2deye = tf.transpose(tf.stack([tf.stack([I] * W.shape.as_list()[-2])] * W.shape.as_list()[-1]), perm=[2, 3, 1, 0])
 
-            orthog_term = tf.math.reduce_sum(
-                tf.abs(
-                    W * tf.transpose(W, perm=[1, 0, 2, 3]) - tf_2deye
-                )
-            )
+            # orthog_term = tf.math.reduce_sum(
+            #     tf.abs(
+            #         W * tf.transpose(W, perm=[1, 0, 2, 3]) - tf_2deye
+            #     )
+            # )
+            orthog_term = tf.math.reduce_sum(W * W) - tf.constant(1.)
             return self.reg_constant * orthog_term
 
         self.dense_reg_method = orthogonal_reg if config['dense_regularization'] else None

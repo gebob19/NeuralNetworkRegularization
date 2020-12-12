@@ -10,6 +10,3 @@ Techniques Compared
 Datasets Compared Across
 - MNIST 
 - CIFAR10 
-
-
-... more coming soon ... 
